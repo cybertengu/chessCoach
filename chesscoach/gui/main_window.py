@@ -254,11 +254,18 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.progress)
         self.statusBar().addPermanentWidget(self.cancel_button)
 
+        # Plain-language readout of the cursor / previewed move ("Knight g1 → f3 (Nf3)"),
+        # to help with learning square names.
+        self.square_label = QLabel()
+        self.statusBar().addPermanentWidget(self.square_label)
+        self.board.status_changed.connect(self.square_label.setText)
+
         # Vim-ish bottom line: mode + pending keys, and the ':' command line.
         self.mode_label = QLabel()
         self.statusBar().addPermanentWidget(self.mode_label)  # stays visible during messages
         self.command_line = CommandLine(self.close_command_line)
         self.command_line.returnPressed.connect(self._run_command_line)
+        self.command_line.textEdited.connect(self._preview_typed_move)
         self.command_line.hide()
         self.statusBar().addWidget(self.command_line, 1)
 
@@ -840,7 +847,14 @@ class MainWindow(QMainWindow):
         self.command_line.show()
         self.command_line.setFocus()
 
+    def _preview_typed_move(self, text: str) -> None:
+        """Show the blue preview arrow for a move while it's being typed."""
+        if self.board.interactive_color is None:
+            return
+        self.board.set_preview_override(parse_command_line(text, self.board.board).move)
+
     def close_command_line(self) -> None:
+        self.board.set_preview_override(None)
         self.command_line.hide()
         self.command_line.clear()
         self.board.setFocus()

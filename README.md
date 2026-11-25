@@ -79,6 +79,10 @@ hidden: the best move appears nowhere until you ask for it.
 - ✓ **Good or best move**: the mistake is ticked off. Use **Next mistake** to continue.
 - ✗ **Still an error**: you see how much it costs and the opponent's best
   reply (red arrow). **Undo move** (Backspace) lets you try something else.
+- **Preview before you move**: while you hold a piece (Space, click or drag), the
+  square under the cursor or mouse shows a **blue arrow** and a see-through copy
+  of the piece. The status bar spells it out, e.g. `Knight f3 → e5 (Ne5)`. Typing
+  `:Ne5` previews the same way before you press Enter.
 - **Hint** highlights the piece to move.
 - **Show correct move** reveals the engine's move (green arrow) and line, and
   marks the mistake 👁 in the list.

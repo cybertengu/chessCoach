@@ -149,3 +149,37 @@ def test_help_lists_every_binding():
     for bindings in BINDINGS.values():
         for b in bindings:
             assert b.help in html
+
+
+@requires_stockfish
+def test_preview_before_moving(window):
+    window.start_retry(5)
+    board = window.board
+    # Cursor starts on e1; move to f1 and pick up the bishop. Nothing previewed yet.
+    type_keys(board, ["l", "Space"])
+    assert board.preview_move() is None
+    assert "Holding Bishop on f1" in window.square_label.text()
+
+    # Hovering c4 with the cursor previews Bc4 without playing it.
+    type_keys(board, ["3", "h", "3", "k"])
+    assert board.preview_move() == chess.Move.from_uci("f1c4")
+    assert board.board.piece_at(chess.F1) == chess.Piece(chess.BISHOP, chess.WHITE)
+    assert "Bishop f1 → c4" in window.square_label.text() and "(Bc4)" in window.square_label.text()
+
+    # An illegal target shows no preview and says so.
+    type_keys(board, ["k"])
+    assert board.preview_move() is None
+    assert "can't go to c5" in window.square_label.text()
+
+
+@requires_stockfish
+def test_preview_while_typing(window):
+    window.start_retry(5)
+    type_keys(window.board, [":"])
+    QTest.keyClicks(window.command_line, "Nf")
+    assert window.board.preview_move() is None
+    QTest.keyClicks(window.command_line, "3")
+    assert window.board.preview_move() == chess.Move.from_uci("g1f3")
+    assert "Knight g1 → f3" in window.square_label.text()
+    QTest.keyClick(window.command_line, Key.Key_Escape)
+    assert window.board.preview_move() is None
