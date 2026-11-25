@@ -73,7 +73,8 @@ background. You then get:
 ### Retry your mistakes
 
 Pick one of your mistakes from the list. The board rewinds to the position
-before you went wrong and becomes playable (click or drag). The answer stays
+before you went wrong and becomes playable (click or drag). The move you
+actually played stays tinted in its colour (gold / orange / red) on the board. The answer stays
 hidden: the best move appears nowhere until you ask for it.
 
 - ✓ **Good or best move**: the mistake is ticked off. Use **Next mistake** to continue.

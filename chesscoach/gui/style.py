@@ -20,5 +20,16 @@ JUDGEMENT_COLORS = {
 }
 
 
+JUDGEMENT_COLOR_NAMES = {
+    Judgement.INACCURACY: "gold",
+    Judgement.MISTAKE: "orange",
+    Judgement.BLUNDER: "red",
+}
+
+
+def judgement_color_name(judgement: Judgement) -> str:
+    return JUDGEMENT_COLOR_NAMES.get(judgement, "colour")
+
+
 def judgement_color(judgement: Judgement) -> QColor | None:
     return JUDGEMENT_COLORS.get(judgement)

@@ -130,3 +130,27 @@ def test_show_correct_move_reveals_answer(qapp, monkeypatch):
     # The board stays playable so the revealed move can be tried.
     assert window.board.interactive_color == chess.WHITE
     window.close()
+
+
+@requires_stockfish
+def test_original_move_stays_marked_in_puzzle(qapp, monkeypatch):
+    window = MainWindow()
+    monkeypatch.setattr(window, "_ask_my_color", lambda headers: chess.WHITE)
+    window.load_game(read_game((DATA / "hung_queen.pgn").read_text()), "test")
+    wait_until(qapp, lambda: window.analysis is not None)
+
+    window.start_retry(5)  # 3. Qxe5+?? was h5 -> e5
+    marked = {sq for sq, _ in window.board.marks}
+    assert marked == {chess.H5, chess.E5}
+    assert "red" in window.retry_panel.prompt.text()  # a blunder is marked in red
+
+    # Still marked after a (wrong) attempt and after undo.
+    window.board.move_made.emit(chess.Move.from_uci("h5e5"))
+    wait_until(qapp, lambda: "✗" in window.retry_panel.feedback.text())
+    assert {sq for sq, _ in window.board.marks} == {chess.H5, chess.E5}
+    window.retry_panel.undo_button.click()
+    assert {sq for sq, _ in window.board.marks} == {chess.H5, chess.E5}
+
+    window.exit_retry()
+    assert window.board.marks == []
+    window.close()
