@@ -62,4 +62,15 @@ background. You then get:
   engine's best move. If your Chess.com username doesn't match either player,
   the app asks which side you played.
 
+### Retry your mistakes
+
+Select one of your mistakes and press **Try a better move** (T), or
+double-click the mistake. The board rewinds to the position before you went
+wrong. Play a move by clicking or dragging:
+
+- ✓ **Good/best move**: the mistake is ticked off in the list. Use **Next mistake** to continue.
+- ✗ **Still an error**: you see how much it costs and the opponent's best reply
+  (red arrow). Press **Try again**.
+- **Hint** highlights the piece to move; **Show answer** shows the engine's line.
+
 Use ← / → / Home / End to step through the game and F to flip the board.

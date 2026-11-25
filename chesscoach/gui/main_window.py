@@ -32,10 +32,13 @@ from PySide6.QtWidgets import (
 from ..analysis import GameAnalysis, analyze_game
 from ..classify import Judgement, MoveJudgement, flagged_moves, judge_game, player_color, side_accuracy
 from ..engine import open_engine
+from ..retry import AttemptResult, evaluate_attempt
 from ..pgn import PGNError, read_game, read_game_file
-from .board import Arrow, BoardWidget
+from .board import Arrow
 from .dialogs import ChessComDialog, PastePGNDialog, saved_username
 from .evalgraph import EvalGraph
+from .interactive import InteractiveBoard
+from .retry_panel import RetryPanel
 from .tasks import TaskThread
 from . import style
 
@@ -63,6 +66,11 @@ class MainWindow(QMainWindow):
         self.my_color: chess.Color | None = None
         self.current_ply = 0
         self._thread: TaskThread | None = None
+        # Retry mode: the ply of the mistake being retried, and which ones were fixed.
+        self.retry_ply: int | None = None
+        self.solved: set[int] = set()
+        self._attempt_thread: TaskThread | None = None
+        self._attempt_token = 0
 
         self._build_actions()
         self._build_layout()
@@ -88,10 +96,13 @@ class MainWindow(QMainWindow):
         action("Chess.com…", self.import_chesscom, QKeySequence("Ctrl+I"))
         toolbar.addSeparator()
         action("Flip board", self.flip_board, QKeySequence("F"))
+        self.retry_action = action("Try a better move", lambda: self.start_retry(), QKeySequence("T"))
+        self.retry_action.setEnabled(False)
 
     def _build_layout(self) -> None:
         # Left: board, navigation, graph.
-        self.board = BoardWidget()
+        self.board = InteractiveBoard()
+        self.board.move_made.connect(self._attempt_made)
         nav = QHBoxLayout()
         for text, slot, tip in [
             ("⏮", lambda: self.go_to(0), "Start (Home)"),
@@ -125,12 +136,25 @@ class MainWindow(QMainWindow):
 
         self.mistakes = QListWidget()
         self.mistakes.currentItemChanged.connect(self._mistake_selected)
+        self.mistakes.itemDoubleClicked.connect(lambda _item: self.start_retry())
 
         self.details = QLabel()
         self.details.setWordWrap(True)
         self.details.setTextFormat(Qt.TextFormat.RichText)
         self.details.setMinimumHeight(70)
         self.details.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.retry_button = QPushButton("Try a better move  (T)")
+        self.retry_button.setToolTip("Go back to the position before this move and find a better one")
+        self.retry_button.clicked.connect(lambda: self.start_retry())
+        self.retry_button.hide()
+
+        self.retry_panel = RetryPanel()
+        self.retry_panel.hint_requested.connect(self._retry_hint)
+        self.retry_panel.answer_requested.connect(self._retry_answer)
+        self.retry_panel.reset_requested.connect(lambda: self.start_retry(self.retry_ply))
+        self.retry_panel.next_requested.connect(self._retry_next)
+        self.retry_panel.exit_requested.connect(self.exit_retry)
+        self.retry_panel.hide()
 
         self.move_table = QTableWidget(0, 2)
         self.move_table.setHorizontalHeaderLabels(["White", "Black"])
@@ -146,6 +170,8 @@ class MainWindow(QMainWindow):
         self.right_layout.addWidget(self.filter_box)
         self.right_layout.addWidget(self.mistakes, 2)
         self.right_layout.addWidget(self.details)
+        self.right_layout.addWidget(self.retry_button)
+        self.right_layout.addWidget(self.retry_panel)
         self.right_layout.addWidget(self.move_table, 3)
 
         splitter = QSplitter()
@@ -223,6 +249,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Could not read PGN", str(exc))
 
     def load_game(self, game: chess.pgn.Game, source: str) -> None:
+        self.exit_retry(navigate=False)
+        self.solved = set()
         self.cancel_analysis()
         self.game = game
         self.analysis = None
@@ -372,8 +400,10 @@ class MainWindow(QMainWindow):
         minimum = FILTERS[self.filter_box.currentIndex()][1]
         for j in flagged_moves(self.judgements, self.my_color, minimum):
             m = j.move
+            tick = "✓ " if m.ply in self.solved else ""
             item = QListWidgetItem(
-                f"{m.label}{j.judgement.symbol}  {j.judgement.value} (−{j.win_loss:.0f}%) · best {m.best_move_san}"
+                f"{tick}{m.label}{j.judgement.symbol}  {j.judgement.value} (−{j.win_loss:.0f}%)"
+                f" · best {m.best_move_san}"
             )
             item.setForeground(QBrush(style.judgement_color(j.judgement)))
             item.setData(Qt.ItemDataRole.UserRole, m.ply)
@@ -391,6 +421,8 @@ class MainWindow(QMainWindow):
     def go_to(self, ply: int) -> None:
         if not self.boards:
             return
+        if self.retry_ply is not None:
+            self.exit_retry(navigate=False)
         ply = max(0, min(len(self.moves), ply))
         self.current_ply = ply
         last_move = self.moves[ply - 1] if ply > 0 else None
@@ -409,6 +441,9 @@ class MainWindow(QMainWindow):
                                 highlight_color=highlight, arrows=arrows)
         self.graph.set_current_ply(ply)
         self._show_details(judgement)
+        can_retry = self._is_my_error(judgement)
+        self.retry_button.setVisible(can_retry)
+        self.retry_action.setEnabled(can_retry)
         if ply > 0:
             self.move_table.setCurrentCell((ply - 1) // 2, (ply - 1) % 2)
         else:
@@ -433,6 +468,154 @@ class MainWindow(QMainWindow):
                 text += f": <i>{' '.join(m.best_line_san)}</i>"
         self.details.setText(text)
 
+    # --- retry mode -----------------------------------------------------
+
+    def _is_my_error(self, j: MoveJudgement | None) -> bool:
+        return (
+            j is not None
+            and j.judgement.is_error
+            and (self.my_color is None or j.move.mover == self.my_color)
+        )
+
+    def _judgement_at(self, ply: int | None) -> MoveJudgement | None:
+        if ply is None or not (1 <= ply <= len(self.judgements)):
+            return None
+        return self.judgements[ply - 1]
+
+    def start_retry(self, ply: int | None = None) -> None:
+        """Rewind to just before the mistake at ``ply`` and let the player try again."""
+        ply = self.current_ply if ply is None else ply
+        j = self._judgement_at(ply)
+        if not self._is_my_error(j):
+            return
+        self._attempt_token += 1  # ignore results from any earlier attempt
+        self.retry_ply = ply
+        self.current_ply = ply
+        m = j.move
+        before = self.boards[ply - 1]
+        previous = self.moves[ply - 2] if ply >= 2 else None
+        self.board.set_flipped(m.mover == chess.BLACK)
+        self.board.set_position(before, last_move=previous)
+        self.board.set_interactive(m.mover)
+        self.graph.set_current_ply(ply - 1)
+
+        side = "White" if m.mover == chess.WHITE else "Black"
+        color = style.judgement_color(j.judgement).name()
+        self.retry_panel.set_prompt(
+            f"<h3>Find a better move for {side}</h3>"
+            f"In the game you played <b style='color:{color}'>{m.san}{j.judgement.symbol}</b> "
+            f"({j.judgement.value}, win chance {j.win_before:.0f}% → {j.win_after:.0f}%)."
+        )
+        self.retry_panel.set_feedback("Make your move on the board.")
+        self.details.hide()
+        self.retry_button.hide()
+        self.retry_action.setEnabled(False)
+        self.retry_panel.show()
+
+    def exit_retry(self, navigate: bool = True) -> None:
+        if self.retry_ply is None:
+            return
+        ply = self.retry_ply
+        self.retry_ply = None
+        self._attempt_token += 1
+        self.board.set_interactive(None)
+        self.retry_panel.hide()
+        self.details.show()
+        if navigate:
+            self.go_to(ply)
+
+    def _attempt_made(self, move: chess.Move) -> None:
+        j = self._judgement_at(self.retry_ply)
+        if j is None:
+            return
+        board = self.boards[self.retry_ply - 1].copy()
+        san = board.san(move)
+        board.push(move)
+        self.board.set_interactive(None)
+        self.board.set_position(board, last_move=move)
+        self.retry_panel.set_feedback(f"Checking <b>{san}</b>…")
+
+        self._attempt_token += 1
+        token = self._attempt_token
+        mistake = j.move
+
+        def work(_progress, _stop):
+            with open_engine() as engine:
+                return evaluate_attempt(engine, mistake, move)
+
+        thread = TaskThread(work, self)
+        thread.succeeded.connect(lambda result: self._attempt_judged(token, board, result))
+        thread.failed.connect(lambda msg: self.retry_panel.set_feedback(f"⚠ {msg}"))
+        self._attempt_thread = thread
+        thread.start()
+
+    def _attempt_judged(self, token: int, board: chess.Board, result: AttemptResult) -> None:
+        if token != self._attempt_token or self.retry_ply is None:
+            return
+        if result.solved:
+            self.solved.add(self.retry_ply)
+            self._populate_mistakes()
+            self.retry_panel.set_feedback(
+                f"<span style='color:#2e8b37'><b>✓ {result.feedback()}</b></span>"
+                "<br>Press <b>Next mistake</b> to keep going."
+            )
+            return
+
+        color = style.judgement_color(result.judgement).name()
+        text = f"<span style='color:{color}'><b>✗ {result.feedback()}</b></span>"
+        arrows = []
+        if result.reply_line_san:
+            text += f"<br>The opponent would answer: <i>{' '.join(result.reply_line_san)}</i> (red arrow)"
+            try:
+                reply = board.parse_san(result.reply_line_san[0])
+                arrows.append(Arrow(reply.from_square, reply.to_square, style.PLAYED_ARROW))
+            except ValueError:
+                pass
+        text += "<br>Press <b>Try again</b>, or ask for a hint."
+        self.board.set_position(board, last_move=chess.Move.from_uci(result.move_uci), arrows=arrows)
+        self.retry_panel.set_feedback(text)
+
+    def _retry_hint(self) -> None:
+        j = self._judgement_at(self.retry_ply)
+        if j is None or not j.move.best_move_uci:
+            return
+        if self.board.interactive_color is None:  # showing a previous attempt: rewind first
+            self.start_retry(self.retry_ply)
+        best = chess.Move.from_uci(j.move.best_move_uci)
+        self.board.set_hint(best.from_square)
+        self.retry_panel.set_feedback("Hint: the best move uses the piece on the highlighted square.")
+
+    def _retry_answer(self) -> None:
+        j = self._judgement_at(self.retry_ply)
+        if j is None or not j.move.best_move_uci:
+            return
+        self.start_retry(self.retry_ply)
+        m = j.move
+        best = chess.Move.from_uci(m.best_move_uci)
+        self.board.set_position(
+            self.boards[self.retry_ply - 1],
+            last_move=self.moves[self.retry_ply - 2] if self.retry_ply >= 2 else None,
+            arrows=[Arrow(best.from_square, best.to_square, style.BEST_ARROW)],
+        )
+        line = " ".join(m.best_line_san)
+        self.retry_panel.set_feedback(
+            f"The best move was <b>{m.best_move_san}</b> (green arrow).<br><i>{line}</i>"
+            "<br>Play it on the board to see it checked."
+        )
+
+    def _retry_next(self) -> None:
+        minimum = FILTERS[self.filter_box.currentIndex()][1]
+        plies = [j.move.ply for j in flagged_moves(self.judgements, self.my_color, minimum)]
+        if not plies:
+            return
+        current = self.retry_ply or 0
+        later = [p for p in plies if p > current and p not in self.solved]
+        remaining = later or [p for p in plies if p not in self.solved]
+        if not remaining:
+            self.retry_panel.set_feedback("<b>You've fixed every mistake in this list. 🎉</b>")
+            return
+        self.start_retry(remaining[0])
+
     def flip_board(self) -> None:
         self.board.set_flipped(not self.board.flipped)
 
@@ -451,4 +634,6 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.cancel_analysis()
+        if self._attempt_thread and self._attempt_thread.isRunning():
+            self._attempt_thread.wait()
         super().closeEvent(event)
