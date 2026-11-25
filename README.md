@@ -1,2 +1,2 @@
 # chessCoach
-Analyze my game and try to help me improve.
+Analyze my games and try to help me improve.
