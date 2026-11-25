@@ -166,29 +166,32 @@ class BoardWidget(QWidget):
         self._renderer(piece).render(p, rect)
 
     def paint_arrows(self, p: QPainter) -> None:
-        _, _, sq = self._geometry()
         for arrow in self.arrows:
-            start = self.square_rect(arrow.start).center()
-            end = self.square_rect(arrow.end).center()
-            dx, dy = end.x() - start.x(), end.y() - start.y()
-            length = (dx * dx + dy * dy) ** 0.5
-            if length == 0:
-                continue
-            ux, uy = dx / length, dy / length
-            head_len, head_w = sq * 0.38, sq * 0.32
-            shaft_end = QPointF(end.x() - ux * head_len, end.y() - uy * head_len)
+            self.paint_arrow(p, arrow.start, arrow.end, arrow.color)
 
-            pen = QPen(arrow.color, sq * 0.15)
-            pen.setCapStyle(Qt.PenCapStyle.FlatCap)
-            p.setPen(pen)
-            p.drawLine(start, shaft_end)
+    def paint_arrow(self, p: QPainter, from_sq: chess.Square, to_sq: chess.Square, color: QColor) -> None:
+        _, _, sq = self._geometry()
+        start = self.square_rect(from_sq).center()
+        end = self.square_rect(to_sq).center()
+        dx, dy = end.x() - start.x(), end.y() - start.y()
+        length = (dx * dx + dy * dy) ** 0.5
+        if length == 0:
+            return
+        ux, uy = dx / length, dy / length
+        head_len, head_w = sq * 0.38, sq * 0.32
+        shaft_end = QPointF(end.x() - ux * head_len, end.y() - uy * head_len)
 
-            px, py = -uy, ux
-            head = QPolygonF([
-                end,
-                QPointF(shaft_end.x() + px * head_w, shaft_end.y() + py * head_w),
-                QPointF(shaft_end.x() - px * head_w, shaft_end.y() - py * head_w),
-            ])
-            path = QPainterPath()
-            path.addPolygon(head)
-            p.fillPath(path, arrow.color)
+        pen = QPen(color, sq * 0.15)
+        pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+        p.setPen(pen)
+        p.drawLine(start, shaft_end)
+
+        px, py = -uy, ux
+        head = QPolygonF([
+            end,
+            QPointF(shaft_end.x() + px * head_w, shaft_end.y() + py * head_w),
+            QPointF(shaft_end.x() - px * head_w, shaft_end.y() - py * head_w),
+        ])
+        path = QPainterPath()
+        path.addPolygon(head)
+        p.fillPath(path, color)

@@ -11,6 +11,7 @@ CHECK = QColor(220, 40, 40, 170)
 
 BEST_ARROW = QColor(21, 120, 27, 200)
 PLAYED_ARROW = QColor(200, 50, 50, 170)
+PREVIEW_ARROW = QColor(40, 110, 230, 150)  # blue: a move you're about to make
 
 JUDGEMENT_COLORS = {
     Judgement.INACCURACY: QColor("#d4a72c"),
