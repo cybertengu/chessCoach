@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from ..engine import EngineNotFoundError, find_stockfish
@@ -16,6 +17,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName("chessCoach")
     app.setOrganizationName("chessCoach")
     app.setDesktopFileName("chesscoach")
+    app.setWindowIcon(QIcon.fromTheme("chesscoach"))
 
     try:
         find_stockfish()

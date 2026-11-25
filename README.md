@@ -48,9 +48,17 @@ This uses Chess.com's public API, so no login is needed. Chess variants are skip
 
 ## Desktop app
 
+Add chessCoach to your Fedora app menu (this also sets up `.venv` if needed):
+
 ```bash
-.venv/bin/chesscoach            # or: .venv/bin/chesscoach my_game.pgn
+scripts/install-desktop.sh                # app menu entry + icon
+scripts/install-desktop.sh --default-pgn  # also open .pgn files with chessCoach on double-click
+scripts/install-desktop.sh --uninstall
 ```
+
+Or run it directly: `.venv/bin/chesscoach [my_game.pgn]`.
+
+Save games from Chess.com or Lichess as `.pgn` files ("Download PGN" on the game page).
 
 Load a game from a `.pgn` file (Ctrl+O), pasted text (Ctrl+Shift+V), Chess.com
 (Ctrl+I) or by dropping a file on the window. Stockfish analyses it in the
