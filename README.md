@@ -92,7 +92,7 @@ Everything can be done from the keyboard. Press `?` in the app for the full list
 | Browsing | | Puzzle (retrying a mistake) | |
 |---|---|---|---|
 | `h` / `l` | previous / next half-move | `h` `j` `k` `l` | move the square cursor |
-| `k` / `j` | up / down a full move | `Space` / `Enter` | pick up / drop a piece |
+| `k` / `j` | up / down a full move | `Space` | pick up / drop a piece |
 | `gg` / `G` | start / end (`12G` = move 12) | `:Nf3` | type a move (SAN or `e2e4`) |
 | `5l`, `3j` | counts repeat a motion | `u` | undo your attempt |
 | `n` / `N` | next / previous mistake (starts the puzzle) | `H` | hint |

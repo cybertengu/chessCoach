@@ -53,7 +53,7 @@ BINDINGS: dict[Mode, list[Binding]] = {
         Binding(("l", "Right"), "cursor_right", "Move the square cursor right"),
         Binding(("k", "Up"), "cursor_up", "Move the square cursor up"),
         Binding(("j", "Down"), "cursor_down", "Move the square cursor down"),
-        Binding(("Space", "Enter"), "pick", "Pick up / drop the piece under the cursor"),
+        Binding(("Space",), "pick", "Pick up / drop the piece under the cursor"),
         Binding(("u", "Backspace"), "undo", "Undo your attempt"),
         Binding(("H",), "hint", "Hint: highlight the piece to move"),
         Binding(("s",), "solution", "Show the correct move"),

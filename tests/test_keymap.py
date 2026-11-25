@@ -88,3 +88,12 @@ def test_line_errors():
     assert parse_command_line("Ke5", chess.Board()).error
     assert parse_command_line("Nf3", None).error
     assert parse_command_line("  ", chess.Board()) == parse_command_line("", None)
+
+
+def test_enter_only_starts_puzzles():
+    # Enter means "try a better move" when browsing; in a puzzle it does nothing,
+    # so a double-press can't pick up a piece by accident.
+    p = KeyParser()
+    assert feed_all(p, ["Enter"]) == [Command("retry")]
+    assert feed_all(p, ["Enter"], Mode.PUZZLE) == []
+    assert not p.handles("Enter", Mode.PUZZLE)

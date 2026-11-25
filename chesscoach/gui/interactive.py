@@ -60,7 +60,7 @@ class InteractiveBoard(BoardWidget):
         self.update()
 
     def press_cursor(self) -> None:
-        """Space/Enter: pick up the piece under the cursor, or drop the held one there."""
+        """Space: pick up the piece under the cursor, or drop the held one there."""
         if self.interactive_color is None or self.cursor is None:
             return
         self.cursor_visible = True
