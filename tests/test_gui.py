@@ -154,3 +154,23 @@ def test_original_move_stays_marked_in_puzzle(qapp, monkeypatch):
     window.exit_retry()
     assert window.board.marks == []
     window.close()
+
+
+@requires_stockfish
+def test_solving_the_last_mistake_does_not_offer_next(qapp, monkeypatch):
+    window = MainWindow()
+    monkeypatch.setattr(window, "_ask_my_color", lambda headers: chess.WHITE)
+    window.load_game(read_game((DATA / "hung_queen.pgn").read_text()), "test")
+    wait_until(qapp, lambda: window.analysis is not None)
+    assert window._unsolved_plies() == [5]  # Qxe5+?? is White's only mistake
+
+    window.start_retry(5)
+    assert not window.retry_panel.next_button.isEnabled()  # nothing else to go to
+    window.board.move_made.emit(chess.Move.from_uci("f1c4"))
+    wait_until(qapp, lambda: "✓" in window.retry_panel.feedback.text())
+
+    text = window.retry_panel.feedback.text()
+    assert "last one" in text
+    assert "Next mistake" not in text
+    assert not window.retry_panel.next_button.isEnabled()
+    window.close()

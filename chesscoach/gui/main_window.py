@@ -194,6 +194,7 @@ class MainWindow(QMainWindow):
             self.filter_box.addItem(label)
         self.filter_box.setCurrentIndex(1)
         self.filter_box.currentIndexChanged.connect(self._populate_mistakes)
+        self.filter_box.currentIndexChanged.connect(lambda _i: self._update_next_button())
 
         self.mistakes = QListWidget()
         self.mistakes.setToolTip("n / N: next / previous mistake")
@@ -610,6 +611,7 @@ class MainWindow(QMainWindow):
         else:
             self.retry_panel.set_feedback("Make your move on the board.")
         self.retry_panel.set_undo_enabled(False)
+        self._update_next_button()
         self.keys.reset()
         self._update_mode_label()
         self.board.setFocus()
@@ -676,8 +678,18 @@ class MainWindow(QMainWindow):
             text = f"<span style='color:#2e8b37'><b>✓ {result.feedback()}</b></span>"
             if result.judgement is not Judgement.BEST and self.retry_ply not in self.revealed:
                 text += "<br>The engine liked another move a little more. <b>Undo move</b> to look for it."
-            text += "<br>Press <b>Next mistake</b> to keep going."
+            remaining = self._unsolved_plies()
+            if remaining:
+                left = "1 more" if len(remaining) == 1 else f"{len(remaining)} more"
+                text += f"<br>Press <b>Next mistake</b> (n) to keep going: {left} to fix."
+            else:
+                text += "<br><b>🎉 That was the last one. You've fixed every mistake in this list.</b>"
+                if self.filter_box.currentIndex() > 0:
+                    text += "<br>Press <b>c</b> to include smaller mistakes, or <b>Done</b> (q) to finish."
+                else:
+                    text += "<br>Press <b>Done</b> (q) to finish."
             self.retry_panel.set_feedback(text)
+            self._update_next_button()
             return
 
         color = style.judgement_color(result.judgement).name()
@@ -728,6 +740,20 @@ class MainWindow(QMainWindow):
         self.revealed.add(self.retry_ply)
         self._populate_mistakes()
         self.start_retry(self.retry_ply)
+
+    def _unsolved_plies(self) -> list[int]:
+        """Your mistakes in the current filter that haven't been solved yet."""
+        minimum = FILTERS[self.filter_box.currentIndex()][1]
+        return [
+            j.move.ply
+            for j in flagged_moves(self.judgements, self.my_color, minimum)
+            if j.move.ply not in self.solved
+        ]
+
+    def _update_next_button(self) -> None:
+        """'Next mistake' only makes sense while another unsolved mistake exists."""
+        others = [p for p in self._unsolved_plies() if p != self.retry_ply]
+        self.retry_panel.next_button.setEnabled(bool(others))
 
     def step_mistake(self, direction: int) -> None:
         """Start the puzzle for the next (1) or previous (-1) unsolved mistake, wrapping around."""
