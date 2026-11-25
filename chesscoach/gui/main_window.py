@@ -69,6 +69,9 @@ class MainWindow(QMainWindow):
         # Retry mode: the ply of the mistake being retried, and which ones were fixed.
         self.retry_ply: int | None = None
         self.solved: set[int] = set()
+        # Mistakes whose answer the player chose to reveal. Until then the best
+        # move is hidden everywhere so the player has to find it themselves.
+        self.revealed: set[int] = set()
         self._attempt_thread: TaskThread | None = None
         self._attempt_token = 0
 
@@ -151,7 +154,7 @@ class MainWindow(QMainWindow):
         self.retry_panel = RetryPanel()
         self.retry_panel.hint_requested.connect(self._retry_hint)
         self.retry_panel.answer_requested.connect(self._retry_answer)
-        self.retry_panel.reset_requested.connect(lambda: self.start_retry(self.retry_ply))
+        self.retry_panel.undo_requested.connect(self._retry_undo)
         self.retry_panel.next_requested.connect(self._retry_next)
         self.retry_panel.exit_requested.connect(self.exit_retry)
         self.retry_panel.hide()
@@ -251,6 +254,7 @@ class MainWindow(QMainWindow):
     def load_game(self, game: chess.pgn.Game, source: str) -> None:
         self.exit_retry(navigate=False)
         self.solved = set()
+        self.revealed = set()
         self.cancel_analysis()
         self.game = game
         self.analysis = None
@@ -400,21 +404,37 @@ class MainWindow(QMainWindow):
         minimum = FILTERS[self.filter_box.currentIndex()][1]
         for j in flagged_moves(self.judgements, self.my_color, minimum):
             m = j.move
-            tick = "✓ " if m.ply in self.solved else ""
-            item = QListWidgetItem(
-                f"{tick}{m.label}{j.judgement.symbol}  {j.judgement.value} (−{j.win_loss:.0f}%)"
-                f" · best {m.best_move_san}"
-            )
+            mark = "✓ " if m.ply in self.solved else "👁 " if m.ply in self.revealed else ""
+            text = f"{mark}{m.label}{j.judgement.symbol}  {j.judgement.value} (−{j.win_loss:.0f}%)"
+            if m.ply in self.revealed:
+                text += f" · best {m.best_move_san}"
+            item = QListWidgetItem(text)
             item.setForeground(QBrush(style.judgement_color(j.judgement)))
             item.setData(Qt.ItemDataRole.UserRole, m.ply)
             self.mistakes.addItem(item)
         if self.mistakes.count() == 0 and self.judgements:
             self.mistakes.addItem("No mistakes at this level. Nice game!")
+        self._select_mistake_item(self.retry_ply)
         self.mistakes.blockSignals(False)
 
+    def _select_mistake_item(self, ply: int | None) -> None:
+        """Highlight the list row for ``ply`` without triggering navigation."""
+        blocked = self.mistakes.blockSignals(True)
+        self.mistakes.setCurrentRow(-1)
+        for row in range(self.mistakes.count()):
+            if self.mistakes.item(row).data(Qt.ItemDataRole.UserRole) == ply:
+                self.mistakes.setCurrentRow(row)
+                break
+        self.mistakes.blockSignals(blocked)
+
     def _mistake_selected(self, item: QListWidgetItem | None, _previous=None) -> None:
+        # Picking one of your mistakes goes straight to the puzzle: find a better move.
         if item is not None and item.data(Qt.ItemDataRole.UserRole):
-            self.go_to(int(item.data(Qt.ItemDataRole.UserRole)))
+            self.start_retry(int(item.data(Qt.ItemDataRole.UserRole)))
+
+    def _answer_hidden(self, j: MoveJudgement | None) -> bool:
+        """True while the best move for one of your mistakes is still a secret."""
+        return self._is_my_error(j) and j.move.ply not in self.revealed
 
     # --- navigation -----------------------------------------------------
 
@@ -433,7 +453,7 @@ class MainWindow(QMainWindow):
         if judgement is not None and judgement.judgement.is_error:
             highlight = QColor(style.judgement_color(judgement.judgement))
             highlight.setAlpha(150)
-            if judgement.move.best_move_uci:
+            if judgement.move.best_move_uci and not self._answer_hidden(judgement):
                 best = chess.Move.from_uci(judgement.move.best_move_uci)
                 arrows.append(Arrow(best.from_square, best.to_square, style.BEST_ARROW))
 
@@ -462,10 +482,13 @@ class MainWindow(QMainWindow):
             text += (
                 f"<br><span style='color:{color}'><b>{j.judgement.value.capitalize()}</b></span>: "
                 f"win chance {j.win_before:.0f}% → {j.win_after:.0f}%."
-                f"<br>Best was <b>{m.best_move_san}</b> (green arrow)"
             )
-            if m.best_line_san:
-                text += f": <i>{' '.join(m.best_line_san)}</i>"
+            if self._answer_hidden(j):
+                text += "<br>There was a better move. Can you find it? Press <b>T</b> to try."
+            else:
+                text += f"<br>Best was <b>{m.best_move_san}</b> (green arrow)"
+                if m.best_line_san:
+                    text += f": <i>{' '.join(m.best_line_san)}</i>"
         self.details.setText(text)
 
     # --- retry mode -----------------------------------------------------
@@ -495,8 +518,9 @@ class MainWindow(QMainWindow):
         before = self.boards[ply - 1]
         previous = self.moves[ply - 2] if ply >= 2 else None
         self.board.set_flipped(m.mover == chess.BLACK)
-        self.board.set_position(before, last_move=previous)
+        self.board.set_position(before, last_move=previous, arrows=self._answer_arrows(j))
         self.board.set_interactive(m.mover)
+        self._select_mistake_item(ply)
         self.graph.set_current_ply(ply - 1)
 
         side = "White" if m.mover == chess.WHITE else "Black"
@@ -506,7 +530,11 @@ class MainWindow(QMainWindow):
             f"In the game you played <b style='color:{color}'>{m.san}{j.judgement.symbol}</b> "
             f"({j.judgement.value}, win chance {j.win_before:.0f}% → {j.win_after:.0f}%)."
         )
-        self.retry_panel.set_feedback("Make your move on the board.")
+        if ply in self.revealed:
+            self.retry_panel.set_feedback(self._answer_text(j) + "<br>Play it on the board to check it.")
+        else:
+            self.retry_panel.set_feedback("Make your move on the board.")
+        self.retry_panel.set_undo_enabled(False)
         self.details.hide()
         self.retry_button.hide()
         self.retry_action.setEnabled(False)
@@ -532,8 +560,10 @@ class MainWindow(QMainWindow):
         san = board.san(move)
         board.push(move)
         self.board.set_interactive(None)
+        self.board.set_hint(None)
         self.board.set_position(board, last_move=move)
         self.retry_panel.set_feedback(f"Checking <b>{san}</b>…")
+        self.retry_panel.set_undo_enabled(True)
 
         self._attempt_token += 1
         token = self._attempt_token
@@ -555,10 +585,11 @@ class MainWindow(QMainWindow):
         if result.solved:
             self.solved.add(self.retry_ply)
             self._populate_mistakes()
-            self.retry_panel.set_feedback(
-                f"<span style='color:#2e8b37'><b>✓ {result.feedback()}</b></span>"
-                "<br>Press <b>Next mistake</b> to keep going."
-            )
+            text = f"<span style='color:#2e8b37'><b>✓ {result.feedback()}</b></span>"
+            if result.judgement is not Judgement.BEST and self.retry_ply not in self.revealed:
+                text += "<br>The engine liked another move a little more. <b>Undo move</b> to look for it."
+            text += "<br>Press <b>Next mistake</b> to keep going."
+            self.retry_panel.set_feedback(text)
             return
 
         color = style.judgement_color(result.judgement).name()
@@ -571,7 +602,7 @@ class MainWindow(QMainWindow):
                 arrows.append(Arrow(reply.from_square, reply.to_square, style.PLAYED_ARROW))
             except ValueError:
                 pass
-        text += "<br>Press <b>Try again</b>, or ask for a hint."
+        text += "<br>Press <b>Undo move</b> to try something else."
         self.board.set_position(board, last_move=chess.Move.from_uci(result.move_uci), arrows=arrows)
         self.retry_panel.set_feedback(text)
 
@@ -585,23 +616,30 @@ class MainWindow(QMainWindow):
         self.board.set_hint(best.from_square)
         self.retry_panel.set_feedback("Hint: the best move uses the piece on the highlighted square.")
 
+    def _answer_arrows(self, j: MoveJudgement) -> list[Arrow]:
+        if j.move.ply not in self.revealed or not j.move.best_move_uci:
+            return []
+        best = chess.Move.from_uci(j.move.best_move_uci)
+        return [Arrow(best.from_square, best.to_square, style.BEST_ARROW)]
+
+    def _answer_text(self, j: MoveJudgement) -> str:
+        m = j.move
+        text = f"The correct move was <b>{m.best_move_san}</b> (green arrow)."
+        if m.best_line_san:
+            text += f"<br>Engine line: <i>{' '.join(m.best_line_san)}</i>"
+        return text
+
+    def _retry_undo(self) -> None:
+        if self.retry_ply is not None:
+            self.start_retry(self.retry_ply)
+
     def _retry_answer(self) -> None:
         j = self._judgement_at(self.retry_ply)
         if j is None or not j.move.best_move_uci:
             return
+        self.revealed.add(self.retry_ply)
+        self._populate_mistakes()
         self.start_retry(self.retry_ply)
-        m = j.move
-        best = chess.Move.from_uci(m.best_move_uci)
-        self.board.set_position(
-            self.boards[self.retry_ply - 1],
-            last_move=self.moves[self.retry_ply - 2] if self.retry_ply >= 2 else None,
-            arrows=[Arrow(best.from_square, best.to_square, style.BEST_ARROW)],
-        )
-        line = " ".join(m.best_line_san)
-        self.retry_panel.set_feedback(
-            f"The best move was <b>{m.best_move_san}</b> (green arrow).<br><i>{line}</i>"
-            "<br>Play it on the board to see it checked."
-        )
 
     def _retry_next(self) -> None:
         minimum = FILTERS[self.filter_box.currentIndex()][1]
@@ -621,7 +659,10 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
         key = event.key()
-        if key == Qt.Key.Key_Left:
+        if key == Qt.Key.Key_Backspace and self.retry_ply is not None:
+            if self.retry_panel.undo_button.isEnabled():
+                self._retry_undo()
+        elif key == Qt.Key.Key_Left:
             self.go_to(self.current_ply - 1)
         elif key == Qt.Key.Key_Right:
             self.go_to(self.current_ply + 1)
