@@ -19,3 +19,27 @@ Goal: find the mistakes that keep repeating across my games, then practise them 
 - [ ] **5. Practice deck (spaced repetition)**
   - Turn my own mistake positions into puzzles that come back on a schedule (e.g. SM-2 / Leitner).
   - Same spoiler-free retry flow; failed puzzles come back sooner.
+
+## Visual polish
+
+Process: mock up 2–3 style directions first (e.g. Lichess-like, GNOME/Adwaita native,
+dark & minimal), pick one, then build it as a stack of small PRs checked with screenshots.
+Stay on Qt Widgets; no QML/GTK rewrite.
+
+- [ ] **6. Theme**
+  - Light/dark mode that follows the Fedora system setting; one stylesheet with colour tokens.
+  - Rounded panels, consistent spacing, clear hover/focus states.
+  - Toolbar icons from the system theme (Adwaita).
+- [ ] **7. Board & pieces**
+  - Board colour themes (brown / blue / green); coordinates outside the board.
+  - Vertical eval bar beside the board.
+  - Animated piece moves; optional move / capture / "solved" sounds.
+  - Extra piece sets, only ones whose licence allows it.
+- [ ] **8. Right-hand panel**
+  - Mistakes as cards: severity stripe, move, win % drop, ✓ / 👁 badges.
+  - Big puzzle feedback banner ("✓ Good move!" / "✗ Still a blunder") plus a brief board flash.
+  - Lichess-style move list, tidier game header, accuracy as a small chart.
+- [ ] **9. Polish**
+  - "Thinking…" overlay on the board while Stockfish works.
+  - Start screen with big Open / Paste / Chess.com buttons.
+  - Remember window size and splitter layout.
