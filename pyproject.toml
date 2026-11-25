@@ -7,7 +7,7 @@ name = "chesscoach"
 version = "0.1.0"
 description = "Analyze your chess games with Stockfish, find your mistakes, and practice better moves."
 readme = "README.md"
-license = "MIT"
+license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
 dependencies = [
     "chess>=1.10",
