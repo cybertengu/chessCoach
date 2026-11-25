@@ -591,6 +591,7 @@ class MainWindow(QMainWindow):
         previous = self.moves[ply - 2] if ply >= 2 else None
         self.board.set_flipped(m.mover == chess.BLACK)
         self.board.set_position(before, last_move=previous, arrows=self._answer_arrows(j))
+        self.board.set_marks(self._original_move_marks(j))
         self.board.set_interactive(m.mover)
         self._select_mistake_item(ply)
         self.graph.set_current_ply(ply - 1)
@@ -600,7 +601,9 @@ class MainWindow(QMainWindow):
         self.retry_panel.set_prompt(
             f"<h3>Find a better move for {side}</h3>"
             f"In the game you played <b style='color:{color}'>{m.san}{j.judgement.symbol}</b> "
-            f"({j.judgement.value}, win chance {j.win_before:.0f}% → {j.win_after:.0f}%)."
+            f"({j.judgement.value}, win chance {j.win_before:.0f}% → {j.win_after:.0f}%). "
+            f"It stays marked in <span style='color:{color}'>{style.judgement_color_name(j.judgement)}</span> "
+            "on the board."
         )
         if ply in self.revealed:
             self.retry_panel.set_feedback(self._answer_text(j) + "<br>Play it on the board to check it.")
@@ -615,6 +618,13 @@ class MainWindow(QMainWindow):
         self.retry_action.setEnabled(False)
         self.retry_panel.show()
 
+    def _original_move_marks(self, j: MoveJudgement) -> list:
+        """Tint the from/to squares of the move you actually played, in its severity colour."""
+        color = QColor(style.judgement_color(j.judgement))
+        color.setAlpha(150)
+        move = chess.Move.from_uci(j.move.uci)
+        return [(move.from_square, color), (move.to_square, color)]
+
     def exit_retry(self, navigate: bool = True) -> None:
         if self.retry_ply is None:
             return
@@ -622,6 +632,7 @@ class MainWindow(QMainWindow):
         self.retry_ply = None
         self._attempt_token += 1
         self.board.set_interactive(None)
+        self.board.set_marks([])
         self.retry_panel.hide()
         self.details.show()
         self.keys.reset()

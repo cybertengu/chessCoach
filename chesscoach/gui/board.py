@@ -33,6 +33,9 @@ class BoardWidget(QWidget):
         self.highlight: tuple[chess.Square, chess.Square] | None = None
         self.highlight_color: QColor = style.LAST_MOVE
         self.arrows: list[Arrow] = []
+        # Extra square tints that survive set_position(), e.g. the original
+        # mistake shown throughout a puzzle.
+        self.marks: list[tuple[chess.Square, QColor]] = []
         self.setMinimumSize(320, 320)
         sp = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sp.setHeightForWidth(True)
@@ -52,6 +55,10 @@ class BoardWidget(QWidget):
         self.highlight = (last_move.from_square, last_move.to_square) if last_move else None
         self.highlight_color = highlight_color or style.LAST_MOVE
         self.arrows = list(arrows or [])
+        self.update()
+
+    def set_marks(self, marks: list[tuple[chess.Square, QColor]]) -> None:
+        self.marks = list(marks)
         self.update()
 
     def set_flipped(self, flipped: bool) -> None:
@@ -123,6 +130,9 @@ class BoardWidget(QWidget):
             p.fillRect(rect, style.LIGHT_SQUARE if light else style.DARK_SQUARE)
             if self.highlight and square in self.highlight:
                 p.fillRect(rect, self.highlight_color)
+            for marked, color in self.marks:
+                if marked == square:
+                    p.fillRect(rect, color)
 
             # Coordinates on the left and bottom edges.
             text_color = style.DARK_SQUARE if light else style.LIGHT_SQUARE
