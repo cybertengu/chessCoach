@@ -6,19 +6,23 @@ from pathlib import Path
 
 import chess
 import chess.pgn
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QEvent, QSettings, Qt
 from PySide6.QtGui import QAction, QBrush, QColor, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
+    QApplication,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QSplitter,
@@ -35,14 +39,56 @@ from ..engine import open_engine
 from ..retry import AttemptResult, evaluate_attempt
 from ..pgn import PGNError, read_game, read_game_file
 from .board import Arrow
-from .dialogs import ChessComDialog, PastePGNDialog, saved_username
+from .dialogs import ChessComDialog, HelpDialog, PastePGNDialog, SideDialog, saved_username
 from .evalgraph import EvalGraph
 from .interactive import InteractiveBoard
+from .keymap import Command, KeyParser, Mode, parse_command_line
 from .retry_panel import RetryPanel
 from .tasks import TaskThread
 from . import style
 
 SIDE_KEY = "player/last_side"
+
+_SPECIAL_KEYS = {
+    Qt.Key.Key_Escape: "Esc",
+    Qt.Key.Key_Return: "Enter",
+    Qt.Key.Key_Enter: "Enter",
+    Qt.Key.Key_Space: "Space",
+    Qt.Key.Key_Backspace: "Backspace",
+    Qt.Key.Key_Left: "Left",
+    Qt.Key.Key_Right: "Right",
+    Qt.Key.Key_Up: "Up",
+    Qt.Key.Key_Down: "Down",
+    Qt.Key.Key_Home: "Home",
+    Qt.Key.Key_End: "End",
+}
+
+
+def key_token(event) -> str | None:
+    """Turn a Qt key event into a keymap token (see keymap.py)."""
+    if event.key() in _SPECIAL_KEYS:
+        return _SPECIAL_KEYS[event.key()]
+    text = event.text()
+    return text if len(text) == 1 and text.isprintable() else None
+
+
+class CommandLine(QLineEdit):
+    """Vim-style ':' line at the bottom of the window."""
+
+    def __init__(self, on_cancel, parent=None) -> None:
+        super().__init__(parent)
+        self._on_cancel = on_cancel
+        # Deleting the leading ':' closes the line, like vim.
+        self.textEdited.connect(lambda text: None if text.startswith(":") else on_cancel())
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Escape:
+            self._on_cancel()
+            return
+        super().keyPressEvent(event)
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            # QLineEdit lets Enter bubble up to the window, where it means "retry".
+            event.accept()
 
 FILTERS = [
     ("Inaccuracies, mistakes and blunders", Judgement.INACCURACY),
@@ -86,35 +132,46 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        def action(text: str, slot, shortcut=None) -> QAction:
+        def action(text: str, slot, keys: str, shortcut=None, on_toolbar=True) -> QAction:
             act = QAction(text, self)
             act.triggered.connect(slot)
+            act.setToolTip(f"{text.rstrip('…')}  ({keys})")
             if shortcut:
                 act.setShortcut(shortcut)
-            toolbar.addAction(act)
+            if on_toolbar:
+                toolbar.addAction(act)
+            else:
+                self.addAction(act)
             return act
 
-        action("Open PGN…", self.open_file, QKeySequence.StandardKey.Open)
-        action("Paste PGN…", self.paste_pgn, QKeySequence("Ctrl+Shift+V"))
-        action("Chess.com…", self.import_chesscom, QKeySequence("Ctrl+I"))
+        # Single-letter keys are handled by the vim key parser (see keymap.py),
+        # not by QAction shortcuts, so they can't fire while you type in a text box.
+        action("Open PGN…", self.open_file, "Ctrl+O or :e", QKeySequence.StandardKey.Open)
+        action("Paste PGN…", self.paste_pgn, "Ctrl+Shift+V or :paste", QKeySequence("Ctrl+Shift+V"))
+        action("Chess.com…", self.import_chesscom, "Ctrl+I or :cc", QKeySequence("Ctrl+I"))
         toolbar.addSeparator()
-        action("Flip board", self.flip_board, QKeySequence("F"))
-        self.retry_action = action("Try a better move", lambda: self.start_retry(), QKeySequence("T"))
+        action("Flip board", self.flip_board, "f")
+        self.retry_action = action("Try a better move", lambda: self.start_retry(), "t or Enter")
         self.retry_action.setEnabled(False)
+        toolbar.addSeparator()
+        action("Keys", self.show_help, "?")
+        action("Quit", self.close, "Ctrl+Q or :q", QKeySequence("Ctrl+Q"), on_toolbar=False)
 
     def _build_layout(self) -> None:
         # Left: board, navigation, graph.
         self.board = InteractiveBoard()
+        self.board.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.board.move_made.connect(self._attempt_made)
         nav = QHBoxLayout()
         for text, slot, tip in [
-            ("⏮", lambda: self.go_to(0), "Start (Home)"),
-            ("◀", lambda: self.go_to(self.current_ply - 1), "Previous move (←)"),
-            ("▶", lambda: self.go_to(self.current_ply + 1), "Next move (→)"),
-            ("⏭", lambda: self.go_to(len(self.moves)), "End (End)"),
+            ("⏮", lambda: self.go_to(0), "Start (gg / Home)"),
+            ("◀", lambda: self.go_to(self.current_ply - 1), "Previous move (h / ←)"),
+            ("▶", lambda: self.go_to(self.current_ply + 1), "Next move (l / →)"),
+            ("⏭", lambda: self.go_to(len(self.moves)), "End (G / End)"),
         ]:
             button = QPushButton(text)
             button.setToolTip(tip)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             button.clicked.connect(slot)
             nav.addWidget(button)
         self.graph = EvalGraph()
@@ -132,12 +189,14 @@ class MainWindow(QMainWindow):
         self.summary.setTextFormat(Qt.TextFormat.RichText)
 
         self.filter_box = QComboBox()
+        self.filter_box.setToolTip("Which mistakes to list (c cycles)")
         for label, _ in FILTERS:
             self.filter_box.addItem(label)
         self.filter_box.setCurrentIndex(1)
         self.filter_box.currentIndexChanged.connect(self._populate_mistakes)
 
         self.mistakes = QListWidget()
+        self.mistakes.setToolTip("n / N: next / previous mistake")
         self.mistakes.currentItemChanged.connect(self._mistake_selected)
         self.mistakes.itemDoubleClicked.connect(lambda _item: self.start_retry())
 
@@ -146,7 +205,8 @@ class MainWindow(QMainWindow):
         self.details.setTextFormat(Qt.TextFormat.RichText)
         self.details.setMinimumHeight(70)
         self.details.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.retry_button = QPushButton("Try a better move  (T)")
+        self.retry_button = QPushButton("Try a better move  (t)")
+        self.retry_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.retry_button.setToolTip("Go back to the position before this move and find a better one")
         self.retry_button.clicked.connect(lambda: self.start_retry())
         self.retry_button.hide()
@@ -155,7 +215,7 @@ class MainWindow(QMainWindow):
         self.retry_panel.hint_requested.connect(self._retry_hint)
         self.retry_panel.answer_requested.connect(self._retry_answer)
         self.retry_panel.undo_requested.connect(self._retry_undo)
-        self.retry_panel.next_requested.connect(self._retry_next)
+        self.retry_panel.next_requested.connect(lambda: self.step_mistake(1))
         self.retry_panel.exit_requested.connect(self.exit_retry)
         self.retry_panel.hide()
 
@@ -187,17 +247,31 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setMaximumWidth(260)
         self.progress.hide()
-        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button = QPushButton("Cancel  (Esc)")
+        self.cancel_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.cancel_button.clicked.connect(self.cancel_analysis)
         self.cancel_button.hide()
         self.statusBar().addPermanentWidget(self.progress)
         self.statusBar().addPermanentWidget(self.cancel_button)
+
+        # Vim-ish bottom line: mode + pending keys, and the ':' command line.
+        self.mode_label = QLabel()
+        self.statusBar().addPermanentWidget(self.mode_label)  # stays visible during messages
+        self.command_line = CommandLine(self.close_command_line)
+        self.command_line.returnPressed.connect(self._run_command_line)
+        self.command_line.hide()
+        self.statusBar().addWidget(self.command_line, 1)
+
+        self.keys = KeyParser()
+        QApplication.instance().installEventFilter(self)
+        self._update_mode_label()
 
     def _show_placeholder(self) -> None:
         self.summary.setText(
             "<h3>Load a game to start</h3>"
             "Open a <code>.pgn</code> file (Ctrl+O), paste PGN text (Ctrl+Shift+V), "
             "import from Chess.com (Ctrl+I), or drop a .pgn file on this window."
+            "<br>Press <b>?</b> for all keyboard shortcuts."
         )
 
     # --- loading games --------------------------------------------------
@@ -338,22 +412,13 @@ class MainWindow(QMainWindow):
         color = player_color(headers, saved_username())
         if color is not None:
             return color
-        box = QMessageBox(self)
-        box.setWindowTitle("Which side were you?")
-        box.setText(
-            f"White: {headers.get('White', '?')}\nBlack: {headers.get('Black', '?')}\n\n"
-            "Which side did you play? Your mistakes will be listed for that side."
-        )
-        white = box.addButton("White", QMessageBox.ButtonRole.AcceptRole)
-        black = box.addButton("Black", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("Both", QMessageBox.ButtonRole.RejectRole)
         last = QSettings().value(SIDE_KEY, "white")
-        box.setDefaultButton(black if last == "black" else white)
+        box = SideDialog(headers.get("White", "?"), headers.get("Black", "?"), last == "black", self)
         box.exec()
-        if box.clickedButton() is white:
+        if box.clickedButton() is box.white:
             QSettings().setValue(SIDE_KEY, "white")
             return chess.WHITE
-        if box.clickedButton() is black:
+        if box.clickedButton() is box.black:
             QSettings().setValue(SIDE_KEY, "black")
             return chess.BLACK
         return None
@@ -535,6 +600,9 @@ class MainWindow(QMainWindow):
         else:
             self.retry_panel.set_feedback("Make your move on the board.")
         self.retry_panel.set_undo_enabled(False)
+        self.keys.reset()
+        self._update_mode_label()
+        self.board.setFocus()
         self.details.hide()
         self.retry_button.hide()
         self.retry_action.setEnabled(False)
@@ -549,6 +617,8 @@ class MainWindow(QMainWindow):
         self.board.set_interactive(None)
         self.retry_panel.hide()
         self.details.show()
+        self.keys.reset()
+        self._update_mode_label()
         if navigate:
             self.go_to(ply)
 
@@ -641,37 +711,159 @@ class MainWindow(QMainWindow):
         self._populate_mistakes()
         self.start_retry(self.retry_ply)
 
-    def _retry_next(self) -> None:
+    def step_mistake(self, direction: int) -> None:
+        """Start the puzzle for the next (1) or previous (-1) unsolved mistake, wrapping around."""
         minimum = FILTERS[self.filter_box.currentIndex()][1]
         plies = [j.move.ply for j in flagged_moves(self.judgements, self.my_color, minimum)]
+        unsolved = [p for p in plies if p not in self.solved]
         if not plies:
+            self.statusBar().showMessage("No mistakes in this list.", 3000)
             return
-        current = self.retry_ply or 0
-        later = [p for p in plies if p > current and p not in self.solved]
-        remaining = later or [p for p in plies if p not in self.solved]
-        if not remaining:
-            self.retry_panel.set_feedback("<b>You've fixed every mistake in this list. 🎉</b>")
+        if not unsolved:
+            if self.retry_ply is not None:
+                self.retry_panel.set_feedback("<b>You've fixed every mistake in this list. 🎉</b>")
+            else:
+                self.statusBar().showMessage("You've fixed every mistake in this list.", 4000)
             return
-        self.start_retry(remaining[0])
+        current = self.retry_ply if self.retry_ply is not None else self.current_ply
+        if direction > 0:
+            later = [p for p in unsolved if p > current]
+            self.start_retry(later[0] if later else unsolved[0])
+        else:
+            earlier = [p for p in unsolved if p < current]
+            self.start_retry(earlier[-1] if earlier else unsolved[-1])
+
+    def cycle_filter(self) -> None:
+        self.filter_box.setCurrentIndex((self.filter_box.currentIndex() + 1) % self.filter_box.count())
+        self.statusBar().showMessage(f"Showing: {self.filter_box.currentText()}", 2500)
+
+    def show_help(self) -> None:
+        HelpDialog(self).exec()
 
     def flip_board(self) -> None:
         self.board.set_flipped(not self.board.flipped)
 
-    def keyPressEvent(self, event) -> None:  # noqa: N802
-        key = event.key()
-        if key == Qt.Key.Key_Backspace and self.retry_ply is not None:
+    # --- keyboard ---------------------------------------------------------
+
+    @property
+    def mode(self) -> Mode:
+        return Mode.PUZZLE if self.retry_ply is not None else Mode.NORMAL
+
+    def _update_mode_label(self) -> None:
+        name = "-- PUZZLE --" if self.mode is Mode.PUZZLE else "-- NORMAL --"
+        self.mode_label.setText(f"<b>{name}</b>  {self.keys.pending}")
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        """Route key presses anywhere in this window through the vim key parser."""
+        if event.type() != QEvent.Type.KeyPress:
+            return False
+        if not isinstance(obj, QWidget) or obj.window() is not self:
+            return False
+        if QApplication.activeModalWidget() is not None or QApplication.activePopupWidget() is not None:
+            return False
+        if isinstance(QApplication.focusWidget(), (QLineEdit, QPlainTextEdit, QAbstractSpinBox)):
+            return False  # typing in a text box: letters are just letters
+        if event.modifiers() & (
+            Qt.KeyboardModifier.ControlModifier
+            | Qt.KeyboardModifier.AltModifier
+            | Qt.KeyboardModifier.MetaModifier
+        ):
+            return False  # leave Ctrl+… to the QAction shortcuts
+        token = key_token(event)
+        if token is None or not self.keys.handles(token, self.mode):
+            if token is not None and self.keys.pending:
+                self.keys.reset()  # an unknown key cancels a half-typed command
+                self._update_mode_label()
+            return False
+        command = self.keys.feed(token, self.mode)
+        if command is not None:
+            self.run_key_command(command)
+        self._update_mode_label()
+        return True
+
+    def run_key_command(self, cmd: Command) -> None:
+        n, name = cmd.n, cmd.name
+        if name == "prev":
+            self.go_to(self.current_ply - n)
+        elif name == "next":
+            self.go_to(self.current_ply + n)
+        elif name == "up":
+            self.go_to(self.current_ply - 2 * n)
+        elif name == "down":
+            self.go_to(self.current_ply + 2 * n)
+        elif name in ("start", "end"):
+            if cmd.count is not None:
+                self.go_to(2 * cmd.count - 1)  # after White's move number N
+            else:
+                self.go_to(0 if name == "start" else len(self.moves))
+        elif name == "retry":
+            if self._is_my_error(self._judgement_at(self.current_ply)):
+                self.start_retry()
+            else:
+                self.statusBar().showMessage("Not one of your mistakes. Press n for the next one.", 3000)
+        elif name == "cancel":
+            if self._thread and self._thread.isRunning():
+                self.cancel_analysis()
+        elif name == "flip":
+            self.flip_board()
+        elif name == "help":
+            self.show_help()
+        elif name == "cmdline":
+            self.open_command_line()
+        elif name == "next_mistake":
+            self.step_mistake(1)
+        elif name == "prev_mistake":
+            self.step_mistake(-1)
+        elif name == "cycle_filter":
+            self.cycle_filter()
+        elif name.startswith("cursor_"):
+            right, up = {
+                "cursor_left": (-1, 0), "cursor_right": (1, 0),
+                "cursor_up": (0, 1), "cursor_down": (0, -1),
+            }[name]
+            self.board.move_cursor(right * n, up * n)
+        elif name == "pick":
+            self.board.press_cursor()
+        elif name == "undo":
             if self.retry_panel.undo_button.isEnabled():
                 self._retry_undo()
-        elif key == Qt.Key.Key_Left:
-            self.go_to(self.current_ply - 1)
-        elif key == Qt.Key.Key_Right:
-            self.go_to(self.current_ply + 1)
-        elif key == Qt.Key.Key_Home:
-            self.go_to(0)
-        elif key == Qt.Key.Key_End:
-            self.go_to(len(self.moves))
-        else:
-            super().keyPressEvent(event)
+        elif name == "hint":
+            self._retry_hint()
+        elif name == "solution":
+            self._retry_answer()
+        elif name == "done":
+            self.exit_retry()
+
+    def open_command_line(self) -> None:
+        self.statusBar().clearMessage()  # a temporary message would hide the line
+        self.command_line.setText(":")
+        self.command_line.show()
+        self.command_line.setFocus()
+
+    def close_command_line(self) -> None:
+        self.command_line.hide()
+        self.command_line.clear()
+        self.board.setFocus()
+
+    def _run_command_line(self) -> None:
+        text = self.command_line.text()
+        self.close_command_line()
+        playable = self.board.board if self.board.interactive_color is not None else None
+        result = parse_command_line(text, playable)
+        if result.error:
+            extra = "" if playable is not None else " (moves can be typed while solving a puzzle)"
+            self.statusBar().showMessage(result.error + extra, 4000)
+        elif result.move is not None:
+            self._attempt_made(result.move)
+        elif result.command:
+            {
+                "open": self.open_file,
+                "paste": self.paste_pgn,
+                "chesscom": self.import_chesscom,
+                "quit": self.close,
+                "help": self.show_help,
+                "flip": self.flip_board,
+            }[result.command]()
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.cancel_analysis()
