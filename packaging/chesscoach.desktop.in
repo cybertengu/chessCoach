@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=chessCoach
+GenericName=Chess Game Analysis
+Comment=Find the mistakes in your chess games and practise better moves
+Exec=@EXEC@ %f
+Icon=chesscoach
+Terminal=false
+Categories=Game;BoardGame;
+MimeType=application/vnd.chess-pgn;application/x-chess-pgn;
+Keywords=chess;pgn;stockfish;blunder;analysis;
+StartupWMClass=chesscoach
