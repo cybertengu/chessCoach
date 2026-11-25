@@ -9,6 +9,7 @@ import sys
 import chess
 
 from .analysis import DEFAULT_DEPTH, DEFAULT_MAX_SECONDS, GameAnalysis, analyze_game
+from .chesscom import ChessComError, recent_games
 from .classify import judge_game, player_color, side_accuracy
 from .engine import EngineNotFoundError, open_engine
 from .pgn import PGNError, read_game_file
@@ -68,6 +69,26 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_recent(args: argparse.Namespace) -> int:
+    games = recent_games(args.username, count=args.count)
+    if not games:
+        print("No games found.")
+        return 0
+    for i, game in enumerate(games, 1):
+        print(f"{i:>3}. {game.describe(args.username)}  {game.url}")
+    if args.save:
+        from pathlib import Path
+
+        out = Path(args.save)
+        out.mkdir(parents=True, exist_ok=True)
+        for game in games:
+            stamp = game.end_time.strftime("%Y%m%d-%H%M") if game.end_time else "unknown"
+            name = f"{stamp}-{game.white}-vs-{game.black}.pgn"
+            (out / name).write_text(game.pgn, encoding="utf-8")
+        print(f"Saved {len(games)} PGN files to {out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="chesscoach-cli", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -85,6 +106,12 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--user", help="Your username, to mark your own mistakes")
     analyze.add_argument("--json", action="store_true", help="Print the full analysis as JSON")
     analyze.set_defaults(func=_cmd_analyze)
+
+    recent = sub.add_parser("recent", help="List your recent Chess.com games")
+    recent.add_argument("username", help="Chess.com username")
+    recent.add_argument("--count", type=int, default=10, help="How many games to list")
+    recent.add_argument("--save", metavar="DIR", help="Also save each game as a .pgn file in DIR")
+    recent.set_defaults(func=_cmd_recent)
     return parser
 
 
@@ -92,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (PGNError, EngineNotFoundError, OSError) as exc:
+    except (PGNError, EngineNotFoundError, ChessComError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
