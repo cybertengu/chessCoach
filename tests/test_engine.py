@@ -1,18 +1,9 @@
 import chess
+import chess.engine
 import pytest
 
-from chesscoach.engine import EngineNotFoundError, find_stockfish, open_engine
-
-
-def _have_stockfish() -> bool:
-    try:
-        find_stockfish()
-        return True
-    except EngineNotFoundError:
-        return False
-
-
-requires_stockfish = pytest.mark.skipif(not _have_stockfish(), reason="Stockfish not installed")
+from chesscoach.engine import EngineNotFoundError, find_stockfish
+from conftest import requires_stockfish
 
 
 def test_missing_engine_gives_helpful_error(monkeypatch, tmp_path):
@@ -24,9 +15,8 @@ def test_missing_engine_gives_helpful_error(monkeypatch, tmp_path):
 
 
 @requires_stockfish
-def test_engine_finds_mate_in_one():
+def test_engine_finds_mate_in_one(engine):
     # Scholar's mate pattern: Qxf7# is the only mate.
     board = chess.Board("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 4 4")
-    with open_engine(threads=1) as engine:
-        result = engine.play(board, chess.engine.Limit(depth=8))
+    result = engine.play(board, chess.engine.Limit(depth=8))
     assert board.san(result.move) == "Qxf7#"

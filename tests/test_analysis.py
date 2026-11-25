@@ -1,0 +1,40 @@
+import json
+
+import chess
+
+from chesscoach.analysis import MATE_CP, GameAnalysis, analyze_game
+from chesscoach.pgn import read_game
+from conftest import DATA
+
+
+def test_analysis_covers_every_move(engine):
+    game = read_game((DATA / "opera_game.pgn").read_text())
+    calls = []
+    result = analyze_game(game, engine, depth=8, progress=lambda d, t: calls.append((d, t)))
+
+    assert len(result.moves) == 33
+    assert calls[-1] == (34, 34)
+    first, last = result.moves[0], result.moves[-1]
+    assert first.label == "1. e4"
+    assert last.label == "17. Rd8#"
+    # After the final mate White is winning by mate.
+    assert last.eval_after.cp == MATE_CP and last.eval_after.mate == 0
+    # Evaluations chain: after move n == before move n+1.
+    for a, b in zip(result.moves, result.moves[1:]):
+        assert a.eval_after == b.eval_before
+
+
+def test_detects_hung_queen(engine):
+    game = read_game((DATA / "hung_queen.pgn").read_text())
+    result = analyze_game(game, engine, depth=10)
+    qxe5 = result.moves[-1]
+    assert qxe5.san == "Qxe5+"
+    # Black's Nc6 was fine; Qxe5+ hangs the queen to Nxe5.
+    assert qxe5.eval_before.pov(chess.WHITE) - qxe5.eval_after.pov(chess.WHITE) > 500
+
+
+def test_round_trips_through_json(engine):
+    game = read_game((DATA / "hung_queen.pgn").read_text())
+    result = analyze_game(game, engine, depth=6)
+    restored = GameAnalysis.from_dict(json.loads(json.dumps(result.to_dict())))
+    assert restored == result
