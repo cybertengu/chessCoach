@@ -109,3 +109,8 @@ Everything can be done from the keyboard. Press `?` in the app for the full list
 `:` opens a command line at the bottom: `:e` open a file, `:paste`, `:cc` Chess.com,
 `:q` quit, `:help`. Arrow keys, Home/End and the Ctrl shortcuts also work.
 Single-letter keys are ignored while you type in a text box.
+
+## Credits
+
+chessCoach uses Stockfish, python-chess, PySide6 and the "cburnett" chess pieces.
+See [CREDITS.md](CREDITS.md) for authors and licences.
