@@ -1,4 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 64 64" width="64" height="64">
+  <!-- chessCoach app icon. Knight: "cburnett" chess piece by Colin M. L. Burnett
+       (GPL-2.0-or-later / BSD / GFDL, via python-chess), placed on a board tile.
+       See CREDITS.md. -->
   <rect x="2" y="2" width="60" height="60" rx="12" fill="#b58863"/>
   <rect x="2" y="2" width="30" height="30" rx="12" fill="#f0d9b5"/>
   <rect x="12" y="2" width="20" height="30" fill="#f0d9b5"/>
