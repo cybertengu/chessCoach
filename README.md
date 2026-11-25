@@ -45,3 +45,21 @@ or blunder (`??`).
 ```
 
 This uses Chess.com's public API, so no login is needed. Chess variants are skipped.
+
+## Desktop app
+
+```bash
+.venv/bin/chesscoach            # or: .venv/bin/chesscoach my_game.pgn
+```
+
+Load a game from a `.pgn` file (Ctrl+O), pasted text (Ctrl+Shift+V), Chess.com
+(Ctrl+I) or by dropping a file on the window. Stockfish analyses it in the
+background. You then get:
+
+- an evaluation graph (click it to jump to any move),
+- the move list coloured by inaccuracy / mistake / blunder,
+- **Your mistakes**: your errors only. Select one to see the position and the
+  engine's best move. If your Chess.com username doesn't match either player,
+  the app asks which side you played.
+
+Use ← / → / Home / End to step through the game and F to flip the board.

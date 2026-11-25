@@ -20,6 +20,9 @@ dev = ["pytest>=8"]
 [project.scripts]
 chesscoach-cli = "chesscoach.cli:main"
 
+[project.gui-scripts]
+chesscoach = "chesscoach.gui.app:main"
+
 [tool.setuptools.packages.find]
 include = ["chesscoach*"]
 
