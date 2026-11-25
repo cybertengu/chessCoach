@@ -8,7 +8,7 @@ import sys
 
 import chess
 
-from .analysis import DEFAULT_DEPTH, DEFAULT_MAX_SECONDS, GameAnalysis, analyze_game
+from .analysis import DEFAULT_NODES, GameAnalysis, analyze_game
 from .chesscom import ChessComError, recent_games
 from .classify import judge_game, player_color, side_accuracy
 from .engine import EngineNotFoundError, open_engine
@@ -57,7 +57,7 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
 
     with open_engine(args.engine) as engine:
         result = analyze_game(
-            game, engine, depth=args.depth, max_seconds=args.max_seconds, progress=progress
+            game, engine, nodes=args.nodes, depth=args.depth, progress=progress
         )
     print(file=sys.stderr)
 
@@ -95,13 +95,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     analyze = sub.add_parser("analyze", help="Analyse a PGN file with Stockfish")
     analyze.add_argument("pgn", help="Path to a .pgn file")
-    analyze.add_argument("--depth", type=int, default=DEFAULT_DEPTH, help="Search depth per position")
     analyze.add_argument(
-        "--max-seconds",
-        type=float,
-        default=DEFAULT_MAX_SECONDS,
-        help="Maximum thinking time per position",
+        "--nodes",
+        type=int,
+        default=DEFAULT_NODES,
+        help=f"Nodes searched per position (default {DEFAULT_NODES:,})",
     )
+    analyze.add_argument("--depth", type=int, help="Optional depth cap per position")
     analyze.add_argument("--engine", help="Path to the Stockfish binary")
     analyze.add_argument("--user", help="Your username, to mark your own mistakes")
     analyze.add_argument("--json", action="store_true", help="Print the full analysis as JSON")
