@@ -31,14 +31,14 @@ class RetryPanel(QWidget):
         layout.addWidget(self.feedback)
 
         row = QHBoxLayout()
-        self.undo_button = QPushButton("Undo move")
-        self.undo_button.setToolTip("Take back your attempt and try another move (Backspace)")
-        self.hint_button = QPushButton("Hint")
+        self.undo_button = QPushButton("Undo  (u)")
+        self.undo_button.setToolTip("Take back your attempt and try another move (u or Backspace)")
+        self.hint_button = QPushButton("Hint  (H)")
         self.hint_button.setToolTip("Highlight the piece that should move")
-        self.answer_button = QPushButton("Show correct move")
+        self.answer_button = QPushButton("Show correct move  (s)")
         self.answer_button.setToolTip("Give up and reveal the engine's move")
-        self.next_button = QPushButton("Next mistake")
-        self.exit_button = QPushButton("Done")
+        self.next_button = QPushButton("Next mistake  (n)")
+        self.exit_button = QPushButton("Done  (q)")
         for button, signal in [
             (self.undo_button, self.undo_requested),
             (self.hint_button, self.hint_requested),
@@ -47,6 +47,7 @@ class RetryPanel(QWidget):
             (self.exit_button, self.exit_requested),
         ]:
             button.clicked.connect(signal.emit)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # keys go to the board, not buttons
             row.addWidget(button)
         layout.addLayout(row)
 

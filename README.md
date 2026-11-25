@@ -85,4 +85,22 @@ hidden: the best move appears nowhere until you ask for it.
 
 You can also reach a puzzle by stepping to one of your bad moves and pressing **T**.
 
-Use ← / → / Home / End to step through the game and F to flip the board.
+### Keyboard (vim-style)
+
+Everything can be done from the keyboard. Press `?` in the app for the full list.
+
+| Browsing | | Puzzle (retrying a mistake) | |
+|---|---|---|---|
+| `h` / `l` | previous / next half-move | `h` `j` `k` `l` | move the square cursor |
+| `k` / `j` | up / down a full move | `Space` / `Enter` | pick up / drop a piece |
+| `gg` / `G` | start / end (`12G` = move 12) | `:Nf3` | type a move (SAN or `e2e4`) |
+| `5l`, `3j` | counts repeat a motion | `u` | undo your attempt |
+| `n` / `N` | next / previous mistake (starts the puzzle) | `H` | hint |
+| `t` / `Enter` | try a better move here | `s` | show the correct move |
+| `c` | cycle the mistake filter | `q` / `Esc` | done |
+| `f` | flip the board | `n` / `N` | next / previous mistake |
+| `Esc` | cancel analysis | | |
+
+`:` opens a command line at the bottom: `:e` open a file, `:paste`, `:cc` Chess.com,
+`:q` quit, `:help`. Arrow keys, Home/End and the Ctrl shortcuts also work.
+Single-letter keys are ignored while you type in a text box.
