@@ -72,13 +72,17 @@ background. You then get:
 
 ### Retry your mistakes
 
-Select one of your mistakes and press **Try a better move** (T), or
-double-click the mistake. The board rewinds to the position before you went
-wrong. Play a move by clicking or dragging:
+Pick one of your mistakes from the list. The board rewinds to the position
+before you went wrong and becomes playable (click or drag). The answer stays
+hidden: the best move appears nowhere until you ask for it.
 
-- ✓ **Good/best move**: the mistake is ticked off in the list. Use **Next mistake** to continue.
-- ✗ **Still an error**: you see how much it costs and the opponent's best reply
-  (red arrow). Press **Try again**.
-- **Hint** highlights the piece to move; **Show answer** shows the engine's line.
+- ✓ **Good or best move**: the mistake is ticked off. Use **Next mistake** to continue.
+- ✗ **Still an error**: you see how much it costs and the opponent's best
+  reply (red arrow). **Undo move** (Backspace) lets you try something else.
+- **Hint** highlights the piece to move.
+- **Show correct move** reveals the engine's move (green arrow) and line, and
+  marks the mistake 👁 in the list.
+
+You can also reach a puzzle by stepping to one of your bad moves and pressing **T**.
 
 Use ← / → / Home / End to step through the game and F to flip the board.

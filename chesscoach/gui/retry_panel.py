@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 class RetryPanel(QWidget):
     hint_requested = Signal()
     answer_requested = Signal()
-    reset_requested = Signal()
+    undo_requested = Signal()
     next_requested = Signal()
     exit_requested = Signal()
 
@@ -31,21 +31,27 @@ class RetryPanel(QWidget):
         layout.addWidget(self.feedback)
 
         row = QHBoxLayout()
+        self.undo_button = QPushButton("Undo move")
+        self.undo_button.setToolTip("Take back your attempt and try another move (Backspace)")
         self.hint_button = QPushButton("Hint")
-        self.answer_button = QPushButton("Show answer")
-        self.reset_button = QPushButton("Try again")
+        self.hint_button.setToolTip("Highlight the piece that should move")
+        self.answer_button = QPushButton("Show correct move")
+        self.answer_button.setToolTip("Give up and reveal the engine's move")
         self.next_button = QPushButton("Next mistake")
         self.exit_button = QPushButton("Done")
         for button, signal in [
+            (self.undo_button, self.undo_requested),
             (self.hint_button, self.hint_requested),
             (self.answer_button, self.answer_requested),
-            (self.reset_button, self.reset_requested),
             (self.next_button, self.next_requested),
             (self.exit_button, self.exit_requested),
         ]:
             button.clicked.connect(signal.emit)
             row.addWidget(button)
         layout.addLayout(row)
+
+    def set_undo_enabled(self, enabled: bool) -> None:
+        self.undo_button.setEnabled(enabled)
 
     def set_prompt(self, html: str) -> None:
         self.prompt.setText(html)
