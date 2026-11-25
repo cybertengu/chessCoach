@@ -36,3 +36,12 @@ Moves are judged like on Lichess: each position's evaluation is converted to a
 win percentage, and a move that gives away at least 5 / 10 / 15 percentage
 points versus the engine's best move is an inaccuracy (`?!`), mistake (`?`)
 or blunder (`??`).
+
+## Importing from Chess.com
+
+```bash
+.venv/bin/chesscoach-cli recent UsagiTengu --count 10              # list recent games
+.venv/bin/chesscoach-cli recent UsagiTengu --count 10 --save games # also save .pgn files
+```
+
+This uses Chess.com's public API, so no login is needed. Chess variants are skipped.
