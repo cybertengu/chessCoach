@@ -33,9 +33,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..analysis import GameAnalysis, analyze_game
+from ..analysis import GameAnalysis
+from ..cache import AnalysisCache, analyze_with_cache
 from ..classify import Judgement, MoveJudgement, flagged_moves, judge_game, player_color, side_accuracy
-from ..engine import open_engine, open_engines
+from ..engine import open_engine
 from ..retry import AttemptResult, evaluate_attempt
 from ..pgn import PGNError, read_game, read_game_file
 from .board import Arrow
@@ -367,8 +368,9 @@ class MainWindow(QMainWindow):
 
     def _start_analysis(self, game: chess.pgn.Game) -> None:
         def work(progress, should_stop):
-            with open_engines() as engines:
-                return analyze_game(game, engines, progress=progress, should_stop=should_stop)
+            return analyze_with_cache(
+                game, cache=AnalysisCache(), progress=progress, should_stop=should_stop
+            )
 
         self.progress.setValue(0)
         self.progress.show()

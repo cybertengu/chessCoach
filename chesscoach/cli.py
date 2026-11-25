@@ -8,10 +8,11 @@ import sys
 
 import chess
 
-from .analysis import DEFAULT_NODES, GameAnalysis, analyze_game
+from .analysis import DEFAULT_NODES, GameAnalysis
+from .cache import AnalysisCache, analyze_with_cache
 from .chesscom import ChessComError, recent_games
 from .classify import judge_game, player_color, side_accuracy
-from .engine import EngineNotFoundError, open_engines
+from .engine import EngineNotFoundError
 from .pgn import PGNError, read_game_file
 
 
@@ -55,10 +56,15 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     def progress(done: int, total: int) -> None:
         print(f"\rAnalysing position {done}/{total}", end="", file=sys.stderr, flush=True)
 
-    with open_engines(args.engines, args.engine) as engines:
-        result = analyze_game(
-            game, engines, nodes=args.nodes, depth=args.depth, progress=progress
-        )
+    result = analyze_with_cache(
+        game,
+        cache=None if args.no_cache else AnalysisCache(),
+        nodes=args.nodes,
+        depth=args.depth,
+        engine_count=args.engines,
+        engine_path=args.engine,
+        progress=progress,
+    )
     print(file=sys.stderr)
 
     if args.json:
@@ -107,6 +113,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--engines",
         type=int,
         help="Number of Stockfish processes to run in parallel (default: one per CPU core)",
+    )
+    analyze.add_argument(
+        "--no-cache", action="store_true", help="Re-analyse even if this game was analysed before"
     )
     analyze.add_argument("--user", help="Your username, to mark your own mistakes")
     analyze.add_argument("--json", action="store_true", help="Print the full analysis as JSON")

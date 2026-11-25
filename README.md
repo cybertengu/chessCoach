@@ -31,7 +31,9 @@ If Stockfish is installed somewhere unusual, point to it with
 
 Each position is searched for a fixed 200,000 nodes by a single-threaded
 Stockfish (`--nodes`, optional `--depth` cap), so the same game always gets the
-same verdicts.
+same verdicts. One engine runs per CPU core in parallel (`--engines`), and
+results are cached in `~/.cache/chesscoach/analysis/` (keyed by the moves and
+settings), so re-opening a game is instant; `--no-cache` re-analyses.
 
 Moves are judged like on Lichess: each position's evaluation is converted to a
 win percentage, and a move that gives away at least 5 / 10 / 15 percentage
