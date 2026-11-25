@@ -21,3 +21,13 @@ If Stockfish is installed somewhere unusual, point to it with
 ```bash
 .venv/bin/pytest
 ```
+
+## Command line
+
+```bash
+.venv/bin/chesscoach-cli analyze my_game.pgn          # table of moves, evals, best moves
+.venv/bin/chesscoach-cli analyze my_game.pgn --json   # full analysis as JSON
+```
+
+Each position is searched to depth 16 or for 0.25 s, whichever comes first
+(`--depth`, `--max-seconds`).
