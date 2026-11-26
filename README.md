@@ -33,7 +33,7 @@ Each position is searched for a fixed 200,000 nodes by a single-threaded
 Stockfish (`--nodes`, optional `--depth` cap), so the same game always gets the
 same verdicts. One engine runs per CPU core in parallel (`--engines`), and
 results are cached in `~/.cache/chesscoach/analysis/` (keyed by the moves and
-settings), so re-opening a game is instant; `--no-cache` re-analyses.
+settings), so re-opening a game is instant; `--no-cache` re-analyzes.
 
 Moves are judged like on Lichess: each position's evaluation is converted to a
 win percentage, and a move that gives away at least 5 / 10 / 15 percentage
@@ -67,11 +67,11 @@ Or run it directly: `.venv/bin/chesscoach [my_game.pgn]`.
 Save games from Chess.com or Lichess as `.pgn` files ("Download PGN" on the game page).
 
 Load a game from a `.pgn` file (Ctrl+O), pasted text (Ctrl+Shift+V), Chess.com
-(Ctrl+I) or by dropping a file on the window. Stockfish analyses it in the
+(Ctrl+I) or by dropping a file on the window. Stockfish analyzes it in the
 background. You then get:
 
 - an evaluation graph (click it to jump to any move),
-- the move list coloured by inaccuracy / mistake / blunder,
+- the move list colored by inaccuracy / mistake / blunder,
 - **Your mistakes**: your errors only. Select one to see the position and the
   engine's best move. If your Chess.com username doesn't match either player,
   the app asks which side you played.
@@ -80,7 +80,7 @@ background. You then get:
 
 Pick one of your mistakes from the list. The board rewinds to the position
 before you went wrong and becomes playable (click or drag). The move you
-actually played stays tinted in its colour (gold / orange / red) on the board. The answer stays
+actually played stays tinted in its color (gold / orange / red) on the board. The answer stays
 hidden: the best move appears nowhere until you ask for it.
 
 - ✓ **Good or best move**: the mistake is ticked off. Use **Next mistake** to continue.
@@ -134,7 +134,7 @@ Single-letter keys are ignored while you type in a text box.
 ## Credits
 
 chessCoach uses Stockfish, python-chess, PySide6 and the "cburnett" chess pieces.
-See [CREDITS.md](CREDITS.md) for authors and licences.
+See [CREDITS.md](CREDITS.md) for authors and licenses.
 
 ## License
 

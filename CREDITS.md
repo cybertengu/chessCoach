@@ -4,7 +4,7 @@ chessCoach is built on other people's work. Thank you!
 
 ## Used by the app
 
-| Project | Author | Licence | How chessCoach uses it |
+| Project | Author | License | How chessCoach uses it |
 |---|---|---|---|
 | [Stockfish](https://stockfishchess.org/) | The Stockfish developers | GPL-3.0-or-later | Chess engine. Not bundled: installed separately (`dnf install stockfish`) and run as its own program over the UCI protocol. |
 | [python-chess](https://github.com/niklasf/python-chess) | Niklas Fiekas and contributors | GPL-3.0-or-later | Chess rules, PGN reading, engine communication, piece artwork. Installed by pip. |

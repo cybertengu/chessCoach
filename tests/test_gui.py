@@ -180,14 +180,14 @@ def test_solving_the_last_mistake_does_not_offer_next(qapp, monkeypatch):
 def test_mistakes_and_retries_are_saved_to_the_database(qapp, monkeypatch):
     from chesscoach.db import MistakeDB
 
-    def open_and_analyse():
+    def open_and_analyze():
         window = MainWindow()
         monkeypatch.setattr(window, "_ask_my_color", lambda headers: chess.WHITE)
         window.load_game(read_game((DATA / "hung_queen.pgn").read_text()), "test")
         wait_until(qapp, lambda: window.analysis is not None)
         return window
 
-    window = open_and_analyse()
+    window = open_and_analyze()
     mine = [j.move.ply for j in window.judgements if j.judgement.is_error and j.move.mover == chess.WHITE]
     assert sorted(window.mistake_ids) == mine and 5 in mine
     assert "saved" in window.statusBar().currentMessage()
@@ -202,7 +202,7 @@ def test_mistakes_and_retries_are_saved_to_the_database(qapp, monkeypatch):
     window.close()
 
     # Opening the same game again adds nothing.
-    window = open_and_analyse()
+    window = open_and_analyze()
     assert "already" in window.statusBar().currentMessage()
     window.close()
 

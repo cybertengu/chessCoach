@@ -55,7 +55,7 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     game = read_game_file(args.pgn)
 
     def progress(done: int, total: int) -> None:
-        print(f"\rAnalysing position {done}/{total}", end="", file=sys.stderr, flush=True)
+        print(f"\rAnalyzing position {done}/{total}", end="", file=sys.stderr, flush=True)
 
     result = analyze_with_cache(
         game,
@@ -110,7 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="chesscoach-cli", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    analyze = sub.add_parser("analyze", help="Analyse a PGN file with Stockfish")
+    analyze = sub.add_parser("analyze", help="Analyze a PGN file with Stockfish")
     analyze.add_argument("pgn", help="Path to a .pgn file")
     analyze.add_argument(
         "--nodes",
@@ -126,7 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of Stockfish processes to run in parallel (default: one per CPU core)",
     )
     analyze.add_argument(
-        "--no-cache", action="store_true", help="Re-analyse even if this game was analysed before"
+        "--no-cache", action="store_true", help="Re-analyze even if this game was analyzed before"
     )
     analyze.add_argument(
         "--user", help="Your username, to mark your own mistakes and save them to the mistake database"

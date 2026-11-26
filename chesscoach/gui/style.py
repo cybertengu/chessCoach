@@ -1,4 +1,4 @@
-"""Colours shared by the GUI widgets."""
+"""Colors shared by the GUI widgets."""
 
 from PySide6.QtGui import QColor
 
@@ -28,7 +28,7 @@ JUDGEMENT_COLOR_NAMES = {
 
 
 def judgement_color_name(judgement: Judgement) -> str:
-    return JUDGEMENT_COLOR_NAMES.get(judgement, "colour")
+    return JUDGEMENT_COLOR_NAMES.get(judgement, "color")
 
 
 def judgement_color(judgement: Judgement) -> QColor | None:

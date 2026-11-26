@@ -110,7 +110,7 @@ class GameAnalysis:
 ProgressCallback = Callable[[int, int], None]
 
 
-def analyse_position(
+def analyze_position(
     engine: chess.engine.SimpleEngine, board: chess.Board, limit: chess.engine.Limit
 ) -> PositionInfo:
     """Evaluate one position. Finished games are scored without the engine.
@@ -143,7 +143,7 @@ def _line_san(board: chess.Board, moves: list[chess.Move], max_len: int = 8) -> 
     return sans
 
 
-def _analyse_positions(
+def _analyze_positions(
     engines: list[chess.engine.SimpleEngine],
     boards: list[chess.Board],
     limit: chess.engine.Limit,
@@ -161,7 +161,7 @@ def _analyse_positions(
             return None
         e = idle.get()
         try:
-            return analyse_position(e, board, limit)
+            return analyze_position(e, board, limit)
         finally:
             idle.put(e)
 
@@ -198,7 +198,7 @@ def analyze_game(
     progress: ProgressCallback | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> GameAnalysis:
-    """Analyse every move in ``game``.
+    """Analyze every move in ``game``.
 
     Each position is searched once; the evaluation after move *n* is the
     evaluation before move *n + 1*. Each search stops after ``nodes`` nodes
@@ -224,7 +224,7 @@ def analyze_game(
         board.push(node.move)
         boards.append(board.copy(stack=False))
 
-    positions = _analyse_positions(engines, boards, limit, progress, should_stop)
+    positions = _analyze_positions(engines, boards, limit, progress, should_stop)
 
     moves: list[MoveAnalysis] = []
     for i, node in enumerate(mainline):

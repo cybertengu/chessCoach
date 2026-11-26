@@ -110,7 +110,7 @@ def recent_games(
     games: list[ChessComGame] = []
     for archive_url in reversed(archives):
         month = [ChessComGame.from_api(g) for g in fetch(archive_url).get("games", [])]
-        # Variants (chess960, bughouse...) can't be analysed as normal games.
+        # Variants (chess960, bughouse...) can't be analyzed as normal games.
         month = [g for g in month if g.rules == "chess" and g.pgn]
         month.sort(key=lambda g: g.end_time or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
         games.extend(month)
