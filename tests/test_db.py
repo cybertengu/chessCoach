@@ -16,6 +16,7 @@ from chesscoach.db import (
     parse_time_control,
 )
 from chesscoach.retry import AttemptResult
+from chesscoach.tags import TAGGER_VERSION, Tag
 
 HEADERS = {
     "White": "UsagiTengu",
@@ -145,7 +146,7 @@ def test_reopening_a_game_adds_nothing():
     db.record_attempt(first.mistake_ids[5], _attempt())
     again = _record(db)
     assert again.added == 0
-    assert again == db_mod.RecordedGame(first.game_id, first.mistake_ids, 0)
+    assert again == db_mod.RecordedGame(first.game_id, first.mistake_ids, 0, first.tags)
     with db.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM mistakes").fetchone()[0] == 2
@@ -263,3 +264,96 @@ def test_version_1_database_upgrades_with_its_mistakes(tmp_path):
         conn.execute("INSERT INTO mistake_tags VALUES (1, 'hung_piece')")
         conn.execute("DELETE FROM mistakes")
         assert conn.execute("SELECT COUNT(*) FROM mistake_tags").fetchone()[0] == 0
+
+
+def _tag_rows(db):
+    with db.connect() as conn:
+        return {
+            ply: (tags or "", version)
+            for ply, tags, version in conn.execute(
+                """SELECT m.ply, group_concat(t.tag, ',' ORDER BY t.tag), m.tags_version
+                   FROM mistakes m LEFT JOIN mistake_tags t ON t.mistake_id = m.id
+                   GROUP BY m.id"""
+            )
+        }
+
+
+def test_recording_a_game_tags_its_mistakes():
+    db = MistakeDB()
+    recorded = _record(db)
+    # 3. Qxe5+ came with 41.5 s left of a 600 s game: time trouble.
+    assert recorded.tags == {3: [Tag.OPENING], 5: [Tag.OPENING, Tag.TIME_TROUBLE]}
+    assert _tag_rows(db) == {
+        3: ("opening", TAGGER_VERSION),
+        5: ("opening,time_trouble", TAGGER_VERSION),
+    }
+
+
+def _forget_tags_and_replies(db):
+    """Make the stored mistakes look like they came from schema version 1."""
+    with db.connect() as conn:
+        conn.execute("DELETE FROM mistake_tags")
+        conn.execute("UPDATE mistakes SET refutation_line_san = NULL, tags_version = NULL")
+
+
+def test_reopening_a_game_fills_in_what_older_versions_did_not_store():
+    db = MistakeDB()
+    _record(db)
+    _forget_tags_and_replies(db)
+    _record(db)
+    with db.connect() as conn:
+        replies = dict(conn.execute("SELECT ply, refutation_line_san FROM mistakes"))
+    assert replies == {3: "Nc6 Nf6", 5: None}
+    assert _tag_rows(db)[5] == ("opening,time_trouble", TAGGER_VERSION)
+
+
+def test_retag_finds_missing_replies_with_the_engine():
+    db = MistakeDB()
+    _record(db)
+    _forget_tags_and_replies(db)
+    calls = []
+
+    def find_reply(move, nodes):
+        calls.append((move.ply, nodes))
+        return ["Nxe5"] if move.ply == 5 else ["Nc6"]
+
+    progress = []
+    assert db.retag(find_reply, lambda done, total: progress.append((done, total))) == 2
+    assert calls == [(3, 200_000), (5, 200_000)]
+    assert progress == [(1, 2), (2, 2)]
+    # The knight takes the queen: a hung piece.
+    assert _tag_rows(db)[5] == ("hung_piece,opening,time_trouble", TAGGER_VERSION)
+    # Everything is up to date now.
+    assert db.retag(find_reply) == 0
+    assert len(calls) == 2
+
+
+def test_retag_without_an_engine_redoes_outdated_tags_only(monkeypatch):
+    db = MistakeDB()
+    _record(db)
+    assert db.retag() == 0
+    monkeypatch.setattr(db_mod, "TAGGER_VERSION", TAGGER_VERSION + 1)
+    assert db.retag() == 2
+    assert {v for _, v in _tag_rows(db).values()} == {TAGGER_VERSION + 1}
+
+
+def test_tag_counts_skip_unknown_tags():
+    db = MistakeDB()
+    ids = _record(db).mistake_ids
+    with db.connect() as conn:
+        conn.execute("INSERT INTO mistake_tags VALUES (?, 'from_the_future')", (ids[3],))
+    assert db.tag_counts() == {Tag.OPENING: 2, Tag.TIME_TROUBLE: 1}
+    assert _record(db).tags[3] == [Tag.OPENING]
+
+
+def test_last_move_uses_the_final_positions_line():
+    db = MistakeDB()
+    analysis = _analysis()
+    analysis.final_line_san = ["Nxe5", "d4"]
+    recorded = _record(db, analysis=analysis)
+    assert recorded.tags[5] == [Tag.HUNG_PIECE, Tag.OPENING, Tag.TIME_TROUBLE]
+    # Older cached analyses don't have it: round-tripping keeps it, missing stays None.
+    assert db_mod.GameAnalysis.from_dict(analysis.to_dict()).final_line_san == ["Nxe5", "d4"]
+    data = analysis.to_dict()
+    del data["final_line_san"]
+    assert db_mod.GameAnalysis.from_dict(data).final_line_san is None

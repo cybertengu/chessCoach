@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 
 import chess
 
-from .analysis import DEFAULT_NODES, GameAnalysis
+from .analysis import DEFAULT_NODES, GameAnalysis, MoveAnalysis, reply_line
 from .cache import AnalysisCache, analyze_with_cache
 from .chesscom import ChessComError, recent_games
 from .classify import judge_game, player_color, side_accuracy
-from .db import DatabaseError, MistakeDB
-from .engine import EngineNotFoundError
+from .db import DatabaseError, MistakeDB, parse_time_control, refutation_line
+from .engine import EngineNotFoundError, open_engine
 from .pgn import PGNError, read_game_file
+from .tags import tag_mistake
 
 
 def _plural(n: int, word: str) -> str:
@@ -26,12 +28,17 @@ def _plural(n: int, word: str) -> str:
 def _print_table(result: GameAnalysis, username: str | None) -> None:
     judgements = judge_game(result)
     mine = player_color(result.headers, username)
+    base_seconds, _ = parse_time_control(result.headers.get("TimeControl"))
     for j in judgements:
         m = j.move
         label = f"{m.label}{j.judgement.symbol}"
         note = ""
         if j.judgement.is_error:
-            note = f"{j.judgement.value:<10} (-{j.win_loss:.0f}%)  best: {m.best_move_san}"
+            loss = f"(-{j.win_loss:.0f}%)"
+            note = f"{j.judgement.value:<10} {loss:<6}  best: {m.best_move_san or '-':<7}"
+            tags = tag_mistake(m, refutation_line(result, m.ply), base_seconds)
+            if tags:
+                note += "  [" + ", ".join(t.label for t in tags) + "]"
             if mine is not None and m.mover == mine:
                 note = "<<< " + note
         print(f"{label:<16} {str(m.eval_after):>8}  {note}")
@@ -86,6 +93,33 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_tag(args: argparse.Namespace) -> int:
+    db = MistakeDB()
+    with contextlib.ExitStack() as stack:
+        engine = None
+
+        def find_reply(move: MoveAnalysis, nodes: int | None) -> list[str]:
+            nonlocal engine
+            if engine is None:  # only start Stockfish if a reply line is missing
+                engine = stack.enter_context(open_engine(args.engine))
+            return reply_line(engine, move, nodes)
+
+        def progress(done: int, total: int) -> None:
+            print(f"\rTagging mistake {done}/{total}", end="", file=sys.stderr, flush=True)
+
+        count = db.retag(None if args.no_engine else find_reply, progress)
+    if count:
+        print(file=sys.stderr)
+    print(f"Tagged {_plural(count, 'mistake')} in {db.path}")
+    counts = db.tag_counts()
+    if counts:
+        print()
+        width = max(len(t.label) for t in counts)
+        for tag, n in counts.items():
+            print(f"  {tag.label:<{width}}  {n}")
+    return 0
+
+
 def _cmd_recent(args: argparse.Namespace) -> int:
     games = recent_games(args.username, count=args.count)
     if not games:
@@ -136,6 +170,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyze.add_argument("--json", action="store_true", help="Print the full analysis as JSON")
     analyze.set_defaults(func=_cmd_analyze)
+
+    tag = sub.add_parser(
+        "tag",
+        help="Add pattern tags to the mistakes in your mistake database",
+        description=(
+            "Tag every stored mistake that has no tags yet or was tagged by older rules, "
+            "then show how often each tag appears. Mistakes saved by older versions of "
+            "chessCoach need one Stockfish search each for the opponent's best reply."
+        ),
+    )
+    tag.add_argument("--engine", help="Path to the Stockfish binary")
+    tag.add_argument(
+        "--no-engine",
+        action="store_true",
+        help="Don't run Stockfish; tag from what is stored (some tags may be missed)",
+    )
+    tag.set_defaults(func=_cmd_tag)
 
     recent = sub.add_parser("recent", help="List your recent Chess.com games")
     recent.add_argument("username", help="Chess.com username")

@@ -42,6 +42,9 @@ win percentage, and a move that gives away at least 5 / 10 / 15 percentage
 points versus the engine's best move is an inaccuracy (`?!`), mistake (`?`)
 or blunder (`??`).
 
+Each flagged move also gets its pattern tags in brackets, e.g.
+`[Hung a piece, Time trouble]` (see [Pattern tags](#pattern-tags)).
+
 With `--user`, your own inaccuracies, mistakes and blunders are also saved to
 the mistake database (see below); `--no-save` skips that.
 
@@ -111,6 +114,30 @@ to your move, the win % lost, the game link, date, time control and your clock. 
 ```bash
 sqlite3 ~/.local/share/chesscoach/mistakes.sqlite3 \
   "SELECT judgement, COUNT(*) FROM mistakes GROUP BY judgement"
+```
+
+### Pattern tags
+
+Every saved mistake is tagged with simple rules (`chesscoach/tags.py`) that
+read the engine's lines; they never judge a move themselves.
+
+| What went wrong | What you missed | Context |
+|---|---|---|
+| Hung a piece | Missed capture | Opening (move ≤ 12) |
+| Allowed mate | Missed fork / pin / skewer | Time trouble (clock < 10% of the start) |
+| Back-rank weakness | Missed mate / back-rank mate | Already winning / losing (win % ≥ 75 / ≤ 25) |
+
+"What you missed" tags give the answer away, so the app only shows them once
+a puzzle is solved or revealed. Every number the rules use is in
+`TagThresholds` in `chesscoach/tags.py`.
+
+Tags are stored in the `mistake_tags` table. To tag mistakes saved by an
+older chessCoach (or retag after the rules change) and see how often each
+tag comes up:
+
+```bash
+.venv/bin/chesscoach-cli tag              # one quick Stockfish search per old mistake
+.venv/bin/chesscoach-cli tag --no-engine  # no Stockfish; may miss some tags
 ```
 
 ### Keyboard (vim-style)

@@ -87,6 +87,9 @@ class GameAnalysis:
     moves: list[MoveAnalysis]
     depth: int | None = None  # optional depth cap used for the search
     nodes: int | None = None  # node budget per position
+    # Engine line in the final position: the reply to the last move. None in
+    # analyses cached before it was kept.
+    final_line_san: list[str] | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -104,6 +107,7 @@ class GameAnalysis:
             moves=moves,
             depth=data.get("depth"),
             nodes=data.get("nodes"),
+            final_line_san=data.get("final_line_san"),
         )
 
 
@@ -141,6 +145,17 @@ def _line_san(board: chess.Board, moves: list[chess.Move], max_len: int = 8) -> 
         sans.append(board.san(move))
         board.push(move)
     return sans
+
+
+def reply_line(
+    engine: chess.engine.SimpleEngine, move: MoveAnalysis, nodes: int | None = None
+) -> list[str]:
+    """The opponent's best line (SAN) after ``move``, searched the same way as
+    :func:`analyze_game` does, so it matches what a full analysis would store."""
+    board = chess.Board(move.fen_before)
+    board.push(chess.Move.from_uci(move.uci))
+    info = analyze_position(engine, board, chess.engine.Limit(nodes=nodes or DEFAULT_NODES))
+    return _line_san(board, info.pv)
 
 
 def _analyze_positions(
@@ -247,4 +262,10 @@ def analyze_game(
             )
         )
 
-    return GameAnalysis(headers=dict(game.headers), moves=moves, depth=depth, nodes=nodes)
+    return GameAnalysis(
+        headers=dict(game.headers),
+        moves=moves,
+        depth=depth,
+        nodes=nodes,
+        final_line_san=_line_san(boards[-1], positions[-1].pv),
+    )

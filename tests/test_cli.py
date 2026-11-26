@@ -1,3 +1,5 @@
+import pytest
+
 from chesscoach import cli
 from chesscoach.db import MistakeDB
 from conftest import DATA, requires_stockfish
@@ -39,3 +41,36 @@ def test_analyze_saves_nothing_without_a_known_side_or_with_no_save():
 def test_plural_handles_phrases():
     assert cli._plural(1, "new mistake") == "1 new mistake"
     assert cli._plural(2, "new mistake") == "2 new mistakes"
+
+
+@requires_stockfish
+def test_analyze_prints_tags_next_to_mistakes(capsys):
+    assert cli.main(ARGS) == 0
+    line = next(l for l in capsys.readouterr().out.splitlines() if l.startswith("3. Qxe5+"))
+    assert "[Hung a piece, Opening]" in line
+
+
+def test_tag_without_engine_tags_and_counts(capsys, monkeypatch):
+    from test_db import _forget_tags_and_replies, _record
+
+    db = MistakeDB()
+    _record(db)
+    _forget_tags_and_replies(db)
+    monkeypatch.setattr(cli, "open_engine", lambda *a, **k: pytest.fail("engine started"))
+    assert cli.main(["tag", "--no-engine"]) == 0
+    out = capsys.readouterr().out
+    assert "Tagged 2 mistakes" in out
+    assert "  Opening       2\n  Time trouble  1\n" in out
+    assert cli.main(["tag", "--no-engine"]) == 0
+    assert "Tagged 0 mistakes" in capsys.readouterr().out
+
+
+@requires_stockfish
+def test_tag_searches_missing_replies(capsys):
+    from test_db import _forget_tags_and_replies, _record
+
+    db = MistakeDB()
+    _record(db)
+    _forget_tags_and_replies(db)
+    assert cli.main(["tag"]) == 0
+    assert "Hung a piece" in capsys.readouterr().out
