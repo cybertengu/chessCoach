@@ -3,8 +3,8 @@
 One row per flagged move you made (``mistakes``), the game it came from
 (``games``), and every retry event: each attempt and each time you revealed
 the answer (``retries``). The ``mistake_stats`` view sums the retries up per
-mistake, and ``mistake_tags`` holds each mistake's pattern tags. Later
-features (reports, the practice deck) query this.
+mistake, and ``mistake_tags`` holds each mistake's pattern tags. The practice
+deck keeps its schedule in ``deck`` and its graded reviews in ``reviews``.
 
 The schema is versioned with ``PRAGMA user_version``; to change it, append a
 script to ``MIGRATIONS``. Never edit a script that has already shipped.
@@ -116,6 +116,36 @@ MIGRATIONS: list[str] = [
     # 3: keep the game itself, so a report can open an example position.
     """
     ALTER TABLE games ADD COLUMN pgn TEXT;  -- NULL for games saved before this
+    """,
+    # 4: the practice deck (see chesscoach.deck).
+    """
+    -- One row per mistake that has entered the deck (been reviewed at least once).
+    CREATE TABLE deck (
+        mistake_id INTEGER PRIMARY KEY REFERENCES mistakes(id) ON DELETE CASCADE,
+        box INTEGER NOT NULL CHECK (box >= 1),  -- Leitner box, see chesscoach.deck.INTERVALS
+        due TEXT NOT NULL,                 -- local yyyy-mm-dd the card is due again
+        lapses INTEGER NOT NULL DEFAULT 0, -- how many reviews were failed
+        added_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    ) STRICT;
+
+    CREATE INDEX deck_by_due ON deck (due);
+
+    -- Every graded review, oldest first.
+    CREATE TABLE reviews (
+        id INTEGER PRIMARY KEY,
+        mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
+        reviewed_on TEXT NOT NULL,         -- local yyyy-mm-dd
+        grade TEXT NOT NULL CHECK (grade IN ('pass', 'hard', 'fail')),
+        wrong_attempts INTEGER NOT NULL,
+        used_hint INTEGER NOT NULL CHECK (used_hint IN (0, 1)),
+        box_before INTEGER NOT NULL,       -- 0 = a new card
+        box_after INTEGER NOT NULL,
+        due_after TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    ) STRICT;
+
+    CREATE INDEX reviews_by_mistake ON reviews (mistake_id);
+    CREATE INDEX reviews_by_day ON reviews (reviewed_on);
     """,
 ]
 
