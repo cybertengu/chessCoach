@@ -112,6 +112,10 @@ MIGRATIONS: list[str] = [
 
     CREATE INDEX mistake_tags_by_tag ON mistake_tags (tag);
     """,
+    # 3: keep the game itself, so a report can open an example position.
+    """
+    ALTER TABLE games ADD COLUMN pgn TEXT;  -- NULL for games saved before this
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)
@@ -230,9 +234,16 @@ class MistakeDB:
             conn.close()
 
     def record_game(
-        self, analysis: GameAnalysis, judgements: list[MoveJudgement], my_color: chess.Color
+        self,
+        analysis: GameAnalysis,
+        judgements: list[MoveJudgement],
+        my_color: chess.Color,
+        pgn: str | None = None,
     ) -> RecordedGame:
         """Store your flagged moves from ``analysis``. Safe to call again for the same game.
+
+        ``pgn`` is the game itself, kept so the game can be opened again from
+        the database; a stored PGN is never replaced with None.
 
         Mistakes already stored are kept as they are (with their retry
         history). If you now say you played the other side, the mistakes
@@ -248,14 +259,16 @@ class MistakeDB:
             conn.execute(
                 """
                 INSERT INTO games (key, link, white, black, result, date, time_control,
-                                   base_seconds, increment_seconds, my_color, nodes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (key) DO UPDATE SET my_color = excluded.my_color
+                                   base_seconds, increment_seconds, my_color, nodes, pgn)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (key) DO UPDATE SET
+                    my_color = excluded.my_color,
+                    pgn = COALESCE(excluded.pgn, games.pgn)
                 """,
                 (
                     key, game_link(headers), headers.get("White"), headers.get("Black"),
                     headers.get("Result"), parse_date(headers), headers.get("TimeControl"),
-                    base, inc, color, analysis.nodes,
+                    base, inc, color, analysis.nodes, pgn,
                 ),
             )
             game_id = conn.execute("SELECT id FROM games WHERE key = ?", (key,)).fetchone()[0]

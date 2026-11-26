@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from typing import Callable
 
+import chess.engine
 import chess.pgn
 
 from .analysis import DEFAULT_NODES, GameAnalysis, ProgressCallback, analyze_game
@@ -91,12 +92,16 @@ def analyze_with_cache(
     depth: int | None = None,
     engine_count: int | None = None,
     engine_path: str | os.PathLike[str] | None = None,
+    engines: list[chess.engine.SimpleEngine] | None = None,
     progress: ProgressCallback | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> GameAnalysis:
     """Return the cached analysis of ``game``, or analyze it in parallel and cache it.
 
-    Pass ``cache=None`` to always run the engines (nothing is stored).
+    Pass ``cache=None`` to always run the engines (nothing is stored). Pass
+    already open ``engines`` to reuse them across games (``engine_count`` and
+    ``engine_path`` are then ignored); otherwise engines are started and
+    stopped for this game.
     """
     if cache is not None:
         cached = cache.load(game, nodes=nodes, depth=depth)
@@ -106,7 +111,9 @@ def analyze_with_cache(
                 progress(total, total)
             return cached
 
-    with open_engines(engine_count, engine_path) as engines:
+    with contextlib.ExitStack() as stack:
+        if engines is None:
+            engines = stack.enter_context(open_engines(engine_count, engine_path))
         analysis = analyze_game(
             game, engines, nodes=nodes, depth=depth, progress=progress, should_stop=should_stop
         )

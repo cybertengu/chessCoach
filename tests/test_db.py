@@ -357,3 +357,15 @@ def test_last_move_uses_the_final_positions_line():
     data = analysis.to_dict()
     del data["final_line_san"]
     assert db_mod.GameAnalysis.from_dict(data).final_line_san is None
+
+
+def test_game_pgn_is_kept_and_never_cleared():
+    db = MistakeDB()
+    analysis = _analysis()
+    db.record_game(analysis, judge_game(analysis), chess.WHITE)
+    with db.connect() as conn:
+        assert conn.execute("SELECT pgn FROM games").fetchone()[0] is None
+    db.record_game(analysis, judge_game(analysis), chess.WHITE, pgn="1. e4 *")
+    db.record_game(analysis, judge_game(analysis), chess.WHITE)  # no PGN this time
+    with db.connect() as conn:
+        assert conn.execute("SELECT pgn FROM games").fetchone()[0] == "1. e4 *"

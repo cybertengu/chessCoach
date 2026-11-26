@@ -78,7 +78,7 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     mine = player_color(result.headers, args.user)
     if mine is not None and not args.no_save:
         db = MistakeDB()
-        recorded = db.record_game(result, judge_game(result), mine)
+        recorded = db.record_game(result, judge_game(result), mine, pgn=str(game))
         print(
             f"Saved {_plural(recorded.added, 'new mistake')} to {db.path}"
             f" ({len(recorded.mistake_ids)} stored for this game)",

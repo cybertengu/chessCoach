@@ -470,7 +470,9 @@ class MainWindow(QMainWindow):
         if self.analysis is None or self.my_color is None:
             return ""
         try:
-            recorded = self.db.record_game(self.analysis, self.judgements, self.my_color)
+            recorded = self.db.record_game(
+                self.analysis, self.judgements, self.my_color, pgn=str(self.game)
+            )
         except DatabaseError as exc:
             return f" · could not save your mistakes: {exc}"
         self.mistake_ids = recorded.mistake_ids
