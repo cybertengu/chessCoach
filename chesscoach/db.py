@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import chess
+import chess.pgn
 
 from .analysis import Evaluation, GameAnalysis, MoveAnalysis
 from .classify import MoveJudgement, flagged_moves
@@ -319,6 +320,16 @@ class MistakeDB:
             ids = dict(conn.execute("SELECT ply, id FROM mistakes WHERE game_id = ?", (game_id,)))
             tags = _tags_by_ply(conn, game_id)
         return RecordedGame(game_id, ids, added, tags)
+
+    def is_stored(self, game: chess.pgn.Game) -> bool:
+        """True if ``game`` is saved together with its PGN."""
+        board = game.board()
+        key = game_key(dict(game.headers), [m.uci() for m in game.mainline_moves()], board.fen())
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM games WHERE key = ? AND pgn IS NOT NULL", (key,)
+            ).fetchone()
+        return row is not None
 
     def retag(
         self,
