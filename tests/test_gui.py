@@ -235,3 +235,53 @@ def test_database_errors_do_not_break_the_window(qapp, monkeypatch, tmp_path):
     window.board.move_made.emit(chess.Move.from_uci("f1c4"))
     wait_until(qapp, lambda: "✓" in window.retry_panel.feedback.text())
     window.close()
+
+
+@requires_stockfish
+def test_tags_hide_the_missed_pattern_until_solved_or_revealed(qapp, monkeypatch):
+    from chesscoach.tags import Tag
+
+    window = MainWindow()
+    monkeypatch.setattr(window, "_ask_my_color", lambda headers: chess.WHITE)
+    window.load_game(read_game((DATA / "hung_queen.pgn").read_text()), "test")
+    wait_until(qapp, lambda: window.analysis is not None)
+    assert window.tags[5] == [Tag.HUNG_PIECE, Tag.OPENING]
+    assert window.mistakes.item(0).text().endswith("Hung a piece · Opening")
+
+    # Pretend the engine's move was a fork: that tag is a spoiler.
+    window.tags[5] = [Tag.HUNG_PIECE, Tag.MISSED_FORK, Tag.OPENING]
+    window._populate_mistakes()
+    window.go_to(5)
+    assert "Missed fork" not in window.mistakes.item(0).text()
+    assert "Hung a piece" in window.details.text() and "Missed fork" not in window.details.text()
+    window.start_retry(5)
+    assert "Missed fork" not in window.retry_panel.feedback.text()
+
+    # Solving the puzzle shows it ...
+    window.board.move_made.emit(chess.Move.from_uci("f1c4"))
+    wait_until(qapp, lambda: "✓" in window.retry_panel.feedback.text())
+    assert "Pattern: <b>Missed fork</b>" in window.retry_panel.feedback.text()
+    assert "Missed fork" in window.mistakes.item(0).text()
+
+    # ... and so does revealing the answer.
+    window.solved.clear()
+    window._populate_mistakes()
+    assert "Missed fork" not in window.mistakes.item(0).text()
+    window.retry_panel.answer_button.click()
+    assert "Missed fork" in window.retry_panel.feedback.text()
+    assert "Missed fork" in window.mistakes.item(0).text()
+    window.close()
+
+
+@requires_stockfish
+def test_opponents_mistakes_show_every_tag(qapp, monkeypatch):
+    from chesscoach.tags import Tag
+
+    window = MainWindow()
+    monkeypatch.setattr(window, "_ask_my_color", lambda headers: chess.BLACK)
+    window.load_game(read_game((DATA / "hung_queen.pgn").read_text()), "test")
+    wait_until(qapp, lambda: window.analysis is not None)
+    window.tags[5] = [Tag.MISSED_FORK]
+    window.go_to(5)  # White's blunder; you played Black, so its answer is no secret
+    assert "Tags: Missed fork" in window.details.text()
+    window.close()
