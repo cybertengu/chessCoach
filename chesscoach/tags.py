@@ -25,7 +25,7 @@ from .analysis import Evaluation, MoveAnalysis
 from .classify import win_percent
 
 # Bump whenever a rule or a default threshold changes.
-TAGGER_VERSION = 1
+TAGGER_VERSION = 2
 
 
 class TagGroup(Enum):
@@ -50,6 +50,7 @@ class Tag(Enum):
     MISSED_BACK_RANK = "missed_back_rank"
     # Context.
     OPENING = "opening"
+    ENDGAME = "endgame"
     TIME_TROUBLE = "time_trouble"
     ALREADY_WINNING = "already_winning"
     ALREADY_LOSING = "already_losing"
@@ -83,6 +84,7 @@ _LABELS = {
     Tag.MISSED_MATE: "Missed mate",
     Tag.MISSED_BACK_RANK: "Missed back-rank mate",
     Tag.OPENING: "Opening",
+    Tag.ENDGAME: "Endgame",
     Tag.TIME_TROUBLE: "Time trouble",
     Tag.ALREADY_WINNING: "Already winning",
     Tag.ALREADY_LOSING: "Already losing",
@@ -95,6 +97,9 @@ class TagThresholds:
 
     # "Opening": moves up to and including this move number.
     opening_last_move: int = 12
+    # "Endgame" (after the opening): no queens on the board, or each side has
+    # at most this much material besides king and pawns (in pawns).
+    endgame_max_pieces_pawns: int = 13
     # "Time trouble": your clock after the move is below this share of the starting time.
     time_trouble_fraction: float = 0.10
     # "Already winning" / "already losing": your win % before the move
@@ -124,6 +129,43 @@ def _mates_for(evaluation: Evaluation, color: chess.Color) -> bool:
     return (evaluation.mate > 0) == (color == chess.WHITE)
 
 
+class Phase(Enum):
+    """The phase of the game a mistake was made in, from its context tags."""
+
+    OPENING = "opening"
+    MIDDLEGAME = "middlegame"
+    ENDGAME = "endgame"
+
+    @property
+    def label(self) -> str:
+        return self.value.capitalize()
+
+
+def phase_of(tags) -> Phase:
+    """Opening if tagged so, else endgame if tagged so, else middlegame."""
+    tags = set(tags)
+    if Tag.OPENING in tags:
+        return Phase.OPENING
+    if Tag.ENDGAME in tags:
+        return Phase.ENDGAME
+    return Phase.MIDDLEGAME
+
+
+def piece_material(board: chess.Board, color: chess.Color) -> int:
+    """``color``'s material besides king and pawns, in pawns."""
+    return sum(
+        PIECE_VALUES[pt] * len(board.pieces(pt, color))
+        for pt in (chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN)
+    )
+
+
+def is_endgame(board: chess.Board, thresholds: TagThresholds = DEFAULT_TAG_THRESHOLDS) -> bool:
+    if not board.queens:
+        return True
+    limit = thresholds.endgame_max_pieces_pawns
+    return all(piece_material(board, color) <= limit for color in chess.COLORS)
+
+
 def context_tags(
     move: MoveAnalysis,
     base_seconds: int | None,
@@ -132,6 +174,8 @@ def context_tags(
     tags: set[Tag] = set()
     if move.move_number <= thresholds.opening_last_move:
         tags.add(Tag.OPENING)
+    elif is_endgame(chess.Board(move.fen_before), thresholds):
+        tags.add(Tag.ENDGAME)
     if (
         base_seconds
         and move.clock_seconds is not None

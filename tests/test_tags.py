@@ -6,8 +6,10 @@ import pytest
 from chesscoach.analysis import Evaluation, MoveAnalysis
 from chesscoach.tags import (
     DEFAULT_TAG_THRESHOLDS,
+    Phase,
     Tag,
     TagGroup,
+    phase_of,
     sort_tags,
     tag_mistake,
 )
@@ -65,6 +67,47 @@ def test_tags_sort_went_wrong_then_missed_then_context():
 def test_opening_is_up_to_move_12(move_number, tagged):
     tags = tag_mistake(_move(MIDDLEGAME, "h3", move_number=move_number), None, None)
     assert (Tag.OPENING in tags) == tagged
+
+
+# White: Q+R+B = 17; Black: R+R+N = 13.
+QUEEN_VS_ROOKS = "2r1r1k1/5ppp/2n5/8/8/2B5/5PPP/3QR1K1 w - - 0 30"
+ROOK_ENDGAME = "2r3k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 40"
+# Each side: Q+N = 12.
+QUEEN_AND_KNIGHT_EACH = "3q2k1/5ppp/2n5/8/8/2N5/5PPP/3Q2K1 w - - 0 40"
+
+
+@pytest.mark.parametrize(
+    ("fen", "san", "move_number", "tagged"),
+    [
+        (MIDDLEGAME, "h3", 20, False),
+        (QUEEN_VS_ROOKS, "h3", 30, False),
+        (ROOK_ENDGAME, "h3", 40, True),
+        (QUEEN_AND_KNIGHT_EACH, "h3", 40, True),
+        (ROOK_ENDGAME, "h3", 12, False),  # still the opening
+    ],
+)
+def test_endgame_without_queens_or_with_little_material(fen, san, move_number, tagged):
+    tags = tag_mistake(_move(fen, san, move_number=move_number), None, None)
+    assert (Tag.ENDGAME in tags) == tagged
+
+
+def test_endgame_threshold_can_be_adjusted():
+    move = _move(QUEEN_VS_ROOKS, "h3")
+    looser = dataclasses.replace(DEFAULT_TAG_THRESHOLDS, endgame_max_pieces_pawns=17)
+    assert Tag.ENDGAME in tag_mistake(move, None, None, looser)
+
+
+@pytest.mark.parametrize(
+    ("tags", "phase"),
+    [
+        ([Tag.OPENING, Tag.HUNG_PIECE], Phase.OPENING),
+        ([Tag.ENDGAME], Phase.ENDGAME),
+        ([Tag.HUNG_PIECE], Phase.MIDDLEGAME),
+        ([], Phase.MIDDLEGAME),
+    ],
+)
+def test_phase_from_tags(tags, phase):
+    assert phase_of(tags) is phase
 
 
 @pytest.mark.parametrize(
@@ -133,7 +176,9 @@ def test_allowed_mate_for_each_color():
 # --- motifs ------------------------------------------------------------------
 
 def _tags(fen, san, refutation=None, **kwargs):
-    return set(tag_mistake(_move(fen, san, move_number=30, before=Evaluation(0), **kwargs), refutation, None))
+    """Tags of a move at move 30, minus "endgame" (most test positions are small)."""
+    move = _move(fen, san, move_number=30, before=Evaluation(0), **kwargs)
+    return set(tag_mistake(move, refutation, None)) - {Tag.ENDGAME}
 
 
 def test_hung_piece_when_the_reply_takes_material():
