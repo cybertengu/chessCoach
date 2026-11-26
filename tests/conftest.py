@@ -38,3 +38,9 @@ def engines():
         pytest.skip("Stockfish not installed")
     with open_engines(3) as engs:
         yield engs
+
+
+@pytest.fixture(autouse=True)
+def _private_mistake_db(tmp_path, monkeypatch):
+    """Never read or write the user's real mistake database."""
+    monkeypatch.setenv("CHESSCOACH_DB", str(tmp_path / "mistakes.sqlite3"))
