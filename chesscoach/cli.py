@@ -319,7 +319,8 @@ def _print_deck(s: DeckSummary) -> None:
         print("  No puzzles yet. Analyze some games first (chesscoach-cli batch YOUR_NAME).")
         return
     print(f"  Today: {_plural(s.due, 'card')} due + {s.new_today} new = "
-          f"{_plural(s.session_size, 'puzzle')}")
+          f"{_plural(s.session_size, 'puzzle')}"
+          + (". Practice them in the app: Ctrl+P" if s.session_size else ""))
     print(f"  In the deck: {_plural(s.in_deck, 'card')}; {s.new_waiting} more waiting "
           f"({NEW_PER_DAY} new a day)")
     print("\nBoxes (next review after)")

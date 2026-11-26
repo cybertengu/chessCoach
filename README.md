@@ -100,6 +100,13 @@ out. Finding a good move on your first try moves a card up a box, solving it
 after a wrong try or a hint keeps it where it is, and revealing the answer
 sends it back to tomorrow.
 
+In the app, **Practice…** (Ctrl+P or `:practice`) goes through today's cards
+one puzzle at a time, set up straight from the position: the same keys and
+buttons as a retry, plus **Next card** (n). A card you missed comes back once
+more at the end of the session (not graded). "Missed" tags stay hidden until
+you solve or reveal the card in that review, and **Open the game** shows the
+whole game afterwards.
+
 ## Desktop app
 
 Add chessCoach to your Fedora app menu (this also sets up `.venv` if needed):

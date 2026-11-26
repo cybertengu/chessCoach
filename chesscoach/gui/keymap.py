@@ -30,7 +30,7 @@ class Binding:
 _COMMON = [
     Binding(("f",), "flip", "Flip the board"),
     Binding(("?",), "help", "Show this list of keys"),
-    Binding((":",), "cmdline", "Command line: a move like :Nf3, or :e :paste :cc :report :q :help"),
+    Binding((":",), "cmdline", "Command line: a move like :Nf3, or :e :paste :cc :report :practice :q :help"),
     Binding(("n",), "next_mistake", "Next of your mistakes (starts the puzzle)"),
     Binding(("N",), "prev_mistake", "Previous of your mistakes"),
     Binding(("c",), "cycle_filter", "Cycle the mistake filter (all / mistakes+ / blunders)"),
@@ -68,6 +68,7 @@ CTRL_SHORTCUTS = [
     ("Ctrl+Shift+V", "Paste PGN text  (:paste)"),
     ("Ctrl+I", "Import from Chess.com  (:cc)"),
     ("Ctrl+R", "My mistakes: the report  (:report)"),
+    ("Ctrl+P", "Practice: today's puzzles from your deck  (:practice)"),
     ("Ctrl+Q", "Quit  (:q)"),
 ]
 
@@ -153,6 +154,7 @@ LINE_COMMANDS = {
     "help": "help", "h": "help",
     "flip": "flip",
     "report": "report", "mistakes": "report",
+    "practice": "practice", "deck": "practice",
 }
 
 

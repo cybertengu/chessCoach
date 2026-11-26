@@ -332,3 +332,126 @@ def test_report_on_an_empty_database(qapp):
     window.show_report()
     assert "No games in your mistake database yet" in window._report.browser.toPlainText()
     window.close()
+
+
+def _stored_hung_queen(qapp, monkeypatch):
+    """Analyze the hung-queen game once so its blunder is in the mistake database."""
+    window = MainWindow()
+    monkeypatch.setattr(window, "_ask_my_color", lambda headers: chess.WHITE)
+    window.load_game(read_game((DATA / "hung_queen.pgn").read_text()), "test")
+    wait_until(qapp, lambda: window.analysis is not None)
+    best = window.judgements[4].move
+    window.close()
+    return best
+
+
+@requires_stockfish
+def test_practice_session_grades_cards_and_replays_a_missed_one(qapp, monkeypatch):
+    import datetime as dt
+
+    from chesscoach.db import MistakeDB
+    from chesscoach.deck import Deck
+    from chesscoach.gui.practice_window import PracticeWindow
+    from chesscoach.tags import Tag
+
+    best = _stored_hung_queen(qapp, monkeypatch)
+    today = dt.date(2026, 11, 26)
+    window = PracticeWindow(MistakeDB(), today=today)
+    window.show()
+    window.start()
+    card = window.card
+    assert card is not None and card.mistake.ply == 5
+    assert "Card 1 of 1 · new card" in window.header.text()
+    # Set up from the FEN, your side to move, the opponent's last move (2... Nc6) highlighted.
+    assert window.board.board.fen() == card.mistake.fen_before
+    assert window.board.interactive_color == chess.WHITE
+    assert window.board.highlight == (chess.B8, chess.C6)
+    assert "Qxe5+??" in window.retry_panel.prompt.text()
+    shown = window.retry_panel.prompt.text() + window.retry_panel.feedback.text() + window.info.text()
+    assert best.best_move_san not in shown and window.board.arrows == []
+    assert "Open the game" not in window.info.text()
+
+    # A "missed" tag stays hidden until the card is solved or revealed in this review.
+    object.__setattr__(card, "tags", [Tag.HUNG_PIECE, Tag.MISSED_FORK, Tag.OPENING])
+    window._update_info()
+    assert "Hung a piece" in window.info.text() and "Missed fork" not in window.info.text()
+
+    window.board.move_made.emit(chess.Move.from_uci("h5e5"))  # the blunder again
+    wait_until(qapp, lambda: "✗" in window.retry_panel.feedback.text())
+    window.retry_panel.answer_button.click()
+    assert best.best_move_san in window.retry_panel.feedback.text()
+    assert "Missed fork" in window.info.text() and "Open the game" in window.info.text()
+    window.board.move_made.emit(chess.Move.from_uci(best.best_move_uci))
+    wait_until(qapp, lambda: "✓" in window.retry_panel.feedback.text())
+
+    # Revealed before solving: a miss. It comes back once at the end, ungraded.
+    window.retry_panel.next_button.click()
+    assert "Missed" in window.last_result.text()
+    assert "Once more, not graded: 1 of 1" in window.header.text()
+    assert "Missed fork" not in window.info.text()
+    window.board.move_made.emit(chess.Move.from_uci(best.best_move_uci))
+    wait_until(qapp, lambda: "✓" in window.retry_panel.feedback.text())
+    window.retry_panel.next_button.click()
+    assert window.finished
+    assert "1 card reviewed" in window.header.text() and "1 missed" in window.header.text()
+    assert "Tomorrow: 1 card due" in window.header.text()
+    window.close()
+
+    deck = Deck(MistakeDB())
+    assert (deck.card(card.mistake_id).box, deck.card(card.mistake_id).due) == (
+        1, today + dt.timedelta(days=1),
+    )
+    with MistakeDB().connect() as conn:
+        grades = [r[0] for r in conn.execute("SELECT grade FROM reviews")]
+        kinds = [r[0] for r in conn.execute("SELECT kind FROM retries ORDER BY id")]
+    assert grades == ["fail"]  # the replay was not graded
+    assert kinds == ["attempt", "reveal", "attempt", "attempt"]
+
+    # The next day it's due; finding a good move first try is a pass.
+    window = PracticeWindow(MistakeDB(), today=today + dt.timedelta(days=1))
+    window.show()
+    window.start()
+    assert "box 1 of 7" in window.header.text()
+    window.board.move_made.emit(chess.Move.from_uci("f1c4"))
+    wait_until(qapp, lambda: "✓" in window.retry_panel.feedback.text())
+    window.run_key_command("done")  # q ends the session and grades the card
+    assert "1 pass" in window.header.text()
+    window.close()
+    assert deck.card(card.mistake_id).box == 2
+
+
+def test_practice_with_an_empty_deck(qapp):
+    from chesscoach.db import MistakeDB
+    from chesscoach.gui.practice_window import PracticeWindow
+
+    window = PracticeWindow(MistakeDB())
+    window.show()
+    window.start()
+    assert window.finished and "Nothing to practice" in window.header.text()
+    assert "deck is empty" in window.header.text()
+    window.close()
+
+
+@requires_stockfish
+def test_leaving_a_card_untouched_skips_it(qapp, monkeypatch):
+    from chesscoach.db import MistakeDB
+    from chesscoach.gui.practice_window import PracticeWindow
+
+    _stored_hung_queen(qapp, monkeypatch)
+    window = PracticeWindow(MistakeDB())
+    window.show()
+    window.start()
+    window.close()  # closing the window leaves the card: nothing done, nothing recorded
+    with MistakeDB().connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
+
+
+def test_ctrl_p_opens_practice(qapp):
+    window = MainWindow()
+    window.show_practice()
+    assert window._practice.isVisible()
+    first = window._practice
+    window.show_practice()  # a running session is brought forward, not restarted
+    assert window._practice is first
+    window._practice.close()
+    window.close()
