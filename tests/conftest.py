@@ -18,6 +18,12 @@ def _have_stockfish() -> bool:
 requires_stockfish = pytest.mark.skipif(not _have_stockfish(), reason="Stockfish not installed")
 
 
+@pytest.fixture(autouse=True)
+def _private_cache_dir(tmp_path, monkeypatch):
+    """Never read or write the user's real analysis cache."""
+    monkeypatch.setenv("CHESSCOACH_CACHE_DIR", str(tmp_path / "cache"))
+
+
 @pytest.fixture(scope="session")
 def engine():
     if not _have_stockfish():

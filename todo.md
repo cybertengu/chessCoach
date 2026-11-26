@@ -2,7 +2,7 @@
 
 Goal: find the mistakes that keep repeating across my games, then practise them until they stick.
 
-- [ ] **1. Consistent, faster analysis**
+- [x] **1. Consistent, faster analysis**
   - Same game → same verdicts every run: single-threaded Stockfish with a fixed node budget instead of a time cap.
   - Run several engine processes in parallel so a full game still takes ~10–20 s.
   - Cache results per game (hash of the moves) so re-opening a game is instant.
