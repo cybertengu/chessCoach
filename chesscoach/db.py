@@ -18,7 +18,7 @@ import json
 import os
 import re
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +27,7 @@ import chess
 from .analysis import Evaluation, GameAnalysis, MoveAnalysis
 from .classify import MoveJudgement, flagged_moves
 from .retry import AttemptResult
+from .tags import TAGGER_VERSION, Tag, sort_tags, tag_mistake
 
 ENV_VAR = "CHESSCOACH_DB"
 
@@ -190,6 +191,13 @@ class RecordedGame:
     game_id: int
     mistake_ids: dict[int, int]  # ply -> mistakes.id, for every stored mistake of the game
     added: int  # how many of those were new
+    tags: dict[int, list[Tag]]  # ply -> pattern tags, for the same mistakes
+
+
+# Finds the opponent's best reply line after a stored mistake: (mistake, node budget) -> SAN.
+ReplyFinder = Callable[[MoveAnalysis, int | None], list[str]]
+
+_NEEDS_TAGS = "(m.tags_version IS NULL OR m.tags_version < ?)"
 
 
 class MistakeDB:
@@ -277,8 +285,74 @@ class MistakeDB:
                     ),
                 )
                 added += cur.rowcount
+                if refutation is not None:
+                    # Mistakes stored before the reply line was kept get it now.
+                    conn.execute(
+                        """
+                        UPDATE mistakes SET refutation_line_san = ?, tags_version = NULL
+                        WHERE game_id = ? AND ply = ? AND refutation_line_san IS NULL
+                        """,
+                        (" ".join(refutation), game_id, m.ply),
+                    )
+            rows = conn.execute(
+                f"""
+                SELECT m.*, g.base_seconds FROM mistakes m JOIN games g ON g.id = m.game_id
+                WHERE m.game_id = ? AND {_NEEDS_TAGS}
+                """,
+                (game_id, TAGGER_VERSION),
+            ).fetchall()
+            for row in rows:
+                _store_tags(conn, row)
             ids = dict(conn.execute("SELECT ply, id FROM mistakes WHERE game_id = ?", (game_id,)))
-        return RecordedGame(game_id, ids, added)
+            tags = _tags_by_ply(conn, game_id)
+        return RecordedGame(game_id, ids, added, tags)
+
+    def retag(
+        self,
+        find_reply: ReplyFinder | None = None,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> int:
+        """Tag every stored mistake that has no tags yet or was tagged by older rules.
+
+        ``find_reply`` fills in the opponent's reply line where it is missing
+        (mistakes stored before it was kept); without it those are tagged
+        from what is stored. Returns how many mistakes were tagged.
+        """
+        query = f"""
+            SELECT m.*, g.base_seconds, g.nodes FROM mistakes m JOIN games g ON g.id = m.game_id
+            WHERE {_NEEDS_TAGS} {"OR m.refutation_line_san IS NULL" if find_reply else ""}
+            ORDER BY m.id
+        """
+        with self.connect() as conn:
+            rows = conn.execute(query, (TAGGER_VERSION,)).fetchall()
+        for done, row in enumerate(rows, 1):
+            refutation = None
+            if find_reply and row["refutation_line_san"] is None:
+                # The engine search runs outside any open transaction.
+                refutation = " ".join(find_reply(mistake_from_row(row), row["nodes"]))
+            with self.connect() as conn:
+                if refutation is not None:
+                    conn.execute(
+                        "UPDATE mistakes SET refutation_line_san = ? WHERE id = ?",
+                        (refutation, row["id"]),
+                    )
+                    row = conn.execute(
+                        """SELECT m.*, g.base_seconds FROM mistakes m
+                           JOIN games g ON g.id = m.game_id WHERE m.id = ?""",
+                        (row["id"],),
+                    ).fetchone()
+                _store_tags(conn, row)
+            if progress:
+                progress(done, len(rows))
+        return len(rows)
+
+    def tag_counts(self) -> dict[Tag, int]:
+        """How many of your stored mistakes carry each tag, most common first."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT tag, COUNT(*) FROM mistake_tags GROUP BY tag ORDER BY COUNT(*) DESC, tag"
+            ).fetchall()
+        return {Tag(tag): n for tag, n in rows if tag in _TAG_VALUES}
 
     def record_attempt(self, mistake_id: int, result: AttemptResult) -> None:
         """Log one judged retry attempt."""
@@ -301,13 +375,47 @@ class MistakeDB:
             conn.execute("INSERT INTO retries (mistake_id, kind) VALUES (?, 'reveal')", (mistake_id,))
 
 
+_TAG_VALUES = {t.value for t in Tag}
+
+
+def _store_tags(conn: sqlite3.Connection, row: sqlite3.Row) -> None:
+    """(Re)compute the tags of one stored mistake (a row with ``base_seconds``)."""
+    reply = row["refutation_line_san"]
+    tags = tag_mistake(
+        mistake_from_row(row), None if reply is None else reply.split(), row["base_seconds"]
+    )
+    conn.execute("DELETE FROM mistake_tags WHERE mistake_id = ?", (row["id"],))
+    conn.executemany(
+        "INSERT INTO mistake_tags (mistake_id, tag) VALUES (?, ?)",
+        [(row["id"], t.value) for t in tags],
+    )
+    conn.execute("UPDATE mistakes SET tags_version = ? WHERE id = ?", (TAGGER_VERSION, row["id"]))
+
+
+def _tags_by_ply(conn: sqlite3.Connection, game_id: int) -> dict[int, list[Tag]]:
+    result: dict[int, list[Tag]] = {
+        ply: [] for (ply,) in conn.execute("SELECT ply FROM mistakes WHERE game_id = ?", (game_id,))
+    }
+    for ply, tag in conn.execute(
+        """SELECT m.ply, t.tag FROM mistake_tags t JOIN mistakes m ON m.id = t.mistake_id
+           WHERE m.game_id = ?""",
+        (game_id,),
+    ):
+        if tag in _TAG_VALUES:  # skip tags a newer chessCoach may have written
+            result[ply].append(Tag(tag))
+    return {ply: sort_tags(tags) for ply, tags in result.items()}
+
+
 def refutation_line(analysis: GameAnalysis, ply: int) -> list[str] | None:
     """The opponent's best line after the move at ``ply`` (1-based), in SAN.
 
     That is the engine line of the next position, which the analysis already
-    has. None after the game's last move: nothing was searched there.
+    has. None if unknown (the last move, in an analysis cached before the
+    final position's line was kept).
     """
-    return analysis.moves[ply].best_line_san if ply < len(analysis.moves) else None
+    if ply < len(analysis.moves):
+        return analysis.moves[ply].best_line_san
+    return analysis.final_line_san
 
 
 def mistake_from_row(row: sqlite3.Row) -> MoveAnalysis:
