@@ -117,7 +117,7 @@ class TagRow:
     count: int
     share: float  # % of all mistakes
     avg_loss: float  # average win % lost
-    solved: int  # how many you have solved in a retry
+    done: int  # how many you have solved or revealed in a retry
     examples: list[ReportMistake]
     hidden: int = 0  # missed tags: unsolved positions not listed (they'd give the answer away)
 
@@ -304,7 +304,7 @@ def build_report(
                 count=len(with_tag),
                 share=share(len(with_tag)),
                 avg_loss=_avg([m.win_loss for m in with_tag]),
-                solved=sum(m.answer_seen for m in with_tag),
+                done=sum(m.answer_seen for m in with_tag),
                 examples=_worst(listable, examples),
                 hidden=len(with_tag) - len(listable),
             )

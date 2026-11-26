@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import datetime as dt
 import json
 import sys
 
@@ -17,6 +18,7 @@ from .classify import judge_game, player_color, side_accuracy
 from .db import DatabaseError, MistakeDB, parse_time_control, refutation_line
 from .engine import EngineNotFoundError, open_engine
 from .pgn import PGNError, read_game_file
+from .report import Filters, Period, Report, ReportMistake, TimeClass, build_report
 from .tags import tag_mistake
 
 
@@ -184,6 +186,120 @@ def _cmd_batch(args: argparse.Namespace) -> int:
     return 1 if result.failed else 0
 
 
+def _example_line(m: ReportMistake) -> str:
+    date = m.date.isoformat() if m.date else "?"
+    where = m.link or "(no link)"
+    return f"    {date}  vs {m.opponent:<20} {m.move_label:<12} {m.judgement:<10} -{m.win_loss:.0f}%  {where}"
+
+
+def _print_report(report: Report) -> None:
+    if not report.games:
+        if report.filters != Filters():
+            print("No games match these filters.")
+        else:
+            print("No games in your mistake database yet. "
+                  "Run `chesscoach-cli batch <username>` first.")
+        return
+    span = ""
+    if report.first_date and report.last_date:
+        span = f", {report.first_date} to {report.last_date}"
+    total = len(report.mistakes)
+    print(f"My top mistakes: {_plural(report.games, 'game')}{span}")
+    j = report.by_judgement
+    print(
+        f"{_plural(total, 'mistake')} ({report.per_game:.1f} per game): "
+        f"{_plural(j['blunder'], 'blunder')}, {_plural(j['mistake'], 'mistake')}, "
+        f"{_plural(j['inaccuracy'], 'inaccuracy')}"
+    )
+    if total:
+        print(
+            f"{report.no_pattern} of them ({100 * report.no_pattern / total:.0f}%) match no "
+            "pattern; the phase table shows where they happen."
+        )
+
+    if report.tags:
+        print()
+        print(f"{'By pattern':<26}{'Count':>6}{'Share':>7}{'Avg loss':>10}{'Done':>9}")
+        group = None
+        for row in report.tags:
+            if row.tag.group is not group:
+                group = row.tag.group
+                print(f"  {group.value.replace('_', ' ').capitalize()}")
+            print(
+                f"    {row.tag.label:<22}{row.count:>6}{row.share:>6.0f}%{row.avg_loss:>9.0f}%"
+                f"{f'{row.done}/{row.count}':>9}"
+            )
+
+        print("  Done: solved or revealed in a retry.")
+
+    print()
+    print(f"{'By phase':<16}{'Count':>6}{'Blunder':>9}{'Mistake':>9}{'Inacc.':>8}"
+          f"{'No pattern':>12}{'Avg loss':>10}")
+    for row in report.phases:
+        b = row.by_judgement
+        print(
+            f"  {row.phase.label:<14}{row.count:>6}{b['blunder']:>9}{b['mistake']:>9}"
+            f"{b['inaccuracy']:>8}{row.no_pattern:>12}{row.avg_loss:>9.0f}%"
+        )
+
+    print()
+    print(f"{'By time control':<18}{'Games':>6}{'Mistakes/game':>15}{'Blunders/game':>15}")
+    for row in report.time_classes:
+        print(
+            f"  {row.time_class.label:<16}{row.games:>6}{row.per_game:>15.1f}"
+            f"{row.blunders_per_game:>15.1f}"
+        )
+
+    if report.trend:
+        print()
+        print(f"{'Trend by ' + report.period.value:<18}{'Games':>6}{'Mistakes/game':>15}"
+              f"{'Blunders/game':>15}  Top patterns")
+        for row in report.trend:
+            top = ", ".join(f"{tag.label} {n}" for tag, n in row.top_patterns) or "-"
+            print(
+                f"  {row.period:<16}{row.games:>6}{row.per_game:>15.1f}"
+                f"{row.blunders_per_game:>15.1f}  {top}"
+            )
+
+    sections: list[tuple[str, list[ReportMistake], int]] = []
+    for row in report.tags:
+        sections.append((row.tag.label, row.examples, row.hidden))
+    for row in report.phases:
+        if row.no_pattern_examples:
+            sections.append((f"No pattern found: {row.phase.label.lower()}", row.no_pattern_examples, 0))
+    if any(examples or hidden for _, examples, hidden in sections):
+        print()
+        print("Examples (biggest drop in win % first; the best move is never shown)")
+        for title, examples, hidden in sections:
+            print(f"  {title}")
+            for m in examples:
+                print(_example_line(m))
+            if hidden:
+                print(
+                    f"    {_plural(hidden, 'position')} not listed: listing them here would hint at "
+                    "the answer. Retry your mistakes in the app to unlock them."
+                )
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    db = MistakeDB()
+    filters = Filters(
+        since=args.since,
+        last_games=args.last,
+        time_class=TimeClass(args.time_control) if args.time_control else None,
+    )
+    report = build_report(db, filters, period=Period(args.by), examples=args.examples)
+    if report.stale_tags:
+        # Tagging from what is stored is quick; `chesscoach-cli tag` can add
+        # the tags that need a Stockfish search.
+        count = db.retag()
+        print(f"Updated the tags of {_plural(count, 'mistake')} tagged by older rules.\n",
+              file=sys.stderr)
+        report = build_report(db, filters, period=Period(args.by), examples=args.examples)
+    _print_report(report)
+    return 0
+
+
 def _cmd_recent(args: argparse.Namespace) -> int:
     games = recent_games(args.username, count=args.count)
     if not games:
@@ -279,6 +395,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--redo", action="store_true", help="Analyze and save games again even if already saved"
     )
     batch.set_defaults(func=_cmd_batch)
+
+    report = sub.add_parser(
+        "report",
+        help="Show your top mistakes: by pattern, phase, time control and month",
+        description=(
+            "Summarize the mistakes in your mistake database, with example positions. "
+            "The best moves are never shown."
+        ),
+    )
+    report.add_argument(
+        "--since", type=dt.date.fromisoformat, metavar="YYYY-MM-DD", help="Only games since this date"
+    )
+    report.add_argument("--last", type=int, metavar="N", help="Only your last N games")
+    report.add_argument(
+        "--time-control",
+        choices=[t.value for t in TimeClass if t is not TimeClass.UNKNOWN],
+        help="Only games of this speed",
+    )
+    report.add_argument(
+        "--by", choices=[p.value for p in Period], default="month", help="Trend period (default month)"
+    )
+    report.add_argument(
+        "--examples", type=int, default=3, metavar="N", help="Example positions per row (default 3)"
+    )
+    report.set_defaults(func=_cmd_report)
 
     recent = sub.add_parser("recent", help="List your recent Chess.com games")
     recent.add_argument("username", help="Chess.com username")

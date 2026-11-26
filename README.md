@@ -70,6 +70,20 @@ with their pattern tags. Games already saved are skipped, so you can stop with
 Ctrl-C and run the same command again to continue. A game that fails is listed
 at the end and the rest still run; `--redo` saves every game again.
 
+### My top mistakes
+
+```bash
+.venv/bin/chesscoach-cli report                         # everything in the mistake database
+.venv/bin/chesscoach-cli report --last 50 --time-control rapid
+.venv/bin/chesscoach-cli report --since 2026-09-01 --by week
+```
+
+Counts your mistakes by pattern tag, by phase (opening / middlegame /
+endgame, including the many mistakes that match no pattern), by time control
+(per game) and by month, with the worst example positions for each. The best
+move is never shown, and a "missed" tag only lists positions you have
+already solved or revealed in a retry.
+
 ## Desktop app
 
 Add chessCoach to your Fedora app menu (this also sets up `.venv` if needed):

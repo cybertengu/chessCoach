@@ -1,5 +1,6 @@
 import datetime as dt
 
+import chess
 import pytest
 
 from chesscoach.db import MistakeDB
@@ -26,9 +27,9 @@ def _add_mistake(conn, gid, ply, tags=(), judgement="mistake", loss=20.0, seen=N
         """INSERT INTO mistakes (game_id, ply, move_number, color, fen, move_uci, move_san,
                best_uci, best_san, eval_before_cp, eval_after_cp, win_before, win_after,
                win_loss, judgement, tags_version)
-           VALUES (?, ?, ?, 'white', 'fen', 'e2e4', 'e4', 'd2d4', 'd4', 0, -200, 50, 50 - ?,
+           VALUES (?, ?, ?, 'white', ?, 'e2e4', 'e4', 'd2d4', 'd4', 0, -200, 50, 50 - ?,
                    ?, ?, ?)""",
-        (gid, ply, (ply + 1) // 2, loss, loss, judgement, version),
+        (gid, ply, (ply + 1) // 2, chess.STARTING_FEN, loss, loss, judgement, version),
     )
     mid = cur.lastrowid
     conn.executemany("INSERT INTO mistake_tags VALUES (?, ?)", [(mid, t.value) for t in tags])
@@ -83,7 +84,7 @@ def test_tags_counted_but_missed_examples_only_once_seen(db):
     assert fork.count == 2 and fork.share == pytest.approx(40.0)
     assert fork.avg_loss == pytest.approx(30.0)
     # Only the revealed one is listed; the unsolved one would hint at a fork.
-    assert [m.ply for m in fork.examples] == [31] and fork.hidden == 1 and fork.solved == 1
+    assert [m.ply for m in fork.examples] == [31] and fork.hidden == 1 and fork.done == 1
     # Went wrong first, then missed, then context.
     assert [r.tag for r in build_report(db).tags] == [
         Tag.HUNG_PIECE, Tag.MISSED_FORK, Tag.TIME_TROUBLE,

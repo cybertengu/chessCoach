@@ -92,3 +92,43 @@ def test_batch_analyzes_recent_games_and_reports_failures(capsys, monkeypatch):
 
     assert cli.main([*args, "--count", "1"]) == 0
     assert "already saved" in capsys.readouterr().out
+
+
+def test_report_prints_every_section_without_spoilers(capsys):
+    from test_report import _add_game, _add_mistake
+
+    from chesscoach.tags import Tag
+
+    db = MistakeDB()
+    with db.connect() as conn:
+        gid = _add_game(conn, "2026-11-20", tc="180+2")
+        _add_mistake(conn, gid, 5, [Tag.OPENING, Tag.HUNG_PIECE], "blunder", 40)
+        _add_mistake(conn, gid, 41, [], "mistake", 15)
+        _add_mistake(conn, gid, 31, [Tag.MISSED_FORK], "mistake", 25)
+    assert cli.main(["report"]) == 0
+    out = capsys.readouterr().out
+    for text in ("1 game", "3 mistakes (3.0 per game)", "Hung a piece", "Missed fork",
+                 "By phase", "Middlegame", "Blitz", "2026-11", "No pattern found: middlegame",
+                 "1 position not listed"):
+        assert text in out, text
+    assert "d4" not in out  # the stored best move is never printed
+
+    assert cli.main(["report", "--time-control", "rapid"]) == 0
+    assert "No games match" in capsys.readouterr().out
+
+
+def test_report_on_an_empty_database(capsys):
+    assert cli.main(["report"]) == 0
+    assert "No games" in capsys.readouterr().out
+
+
+def test_report_updates_old_tags_first(capsys):
+    from test_report import _add_game, _add_mistake
+
+    from chesscoach.tags import TAGGER_VERSION
+
+    db = MistakeDB()
+    with db.connect() as conn:
+        _add_mistake(conn, _add_game(conn), 30, version=TAGGER_VERSION - 1)
+    assert cli.main(["report"]) == 0
+    assert "Updated the tags of 1 mistake" in capsys.readouterr().err
