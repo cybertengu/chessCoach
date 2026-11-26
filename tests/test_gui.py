@@ -285,3 +285,48 @@ def test_opponents_mistakes_show_every_tag(qapp, monkeypatch):
     window.go_to(5)  # White's blunder; you played Black, so its answer is no secret
     assert "Tags: Missed fork" in window.details.text()
     window.close()
+
+
+@requires_stockfish
+def test_report_lists_mistakes_and_opens_one_as_a_puzzle(qapp, monkeypatch):
+    from chesscoach.db import MistakeDB
+
+    window = MainWindow()
+    monkeypatch.setattr(window, "_ask_my_color", lambda headers: chess.WHITE)
+    window.load_game(read_game((DATA / "hung_queen.pgn").read_text()), "test")
+    wait_until(qapp, lambda: window.analysis is not None)
+    best_san = window.judgements[4].move.best_move_san
+    window.close()
+
+    window = MainWindow()
+    window.show_report()
+    text = window._report.browser.toPlainText()
+    assert "My top mistakes" in text and "Hung a piece" in text and "By phase" in text
+    assert "Retry" in text
+    assert best_san not in window._report.browser.toHtml()
+
+    # Clicking Retry opens the game and starts the puzzle without asking for your side.
+    def no_asking(headers):
+        raise AssertionError("the database knows your side")
+
+    monkeypatch.setattr(window, "_ask_my_color", no_asking)
+    with MistakeDB().connect() as conn:
+        mistake_id = conn.execute("SELECT id FROM mistakes WHERE ply = 5").fetchone()[0]
+    window._report._link_clicked(QtCore.QUrl(f"mistake:{mistake_id}"))
+    assert not window._report.isVisible()
+    wait_until(qapp, lambda: window.retry_ply == 5)
+    assert window.my_color == chess.WHITE
+    assert window.board.board.fen() == window.boards[4].fen()
+    assert window.board.arrows == []
+
+    # Filters that match nothing say so.
+    window._report.time_control.setCurrentIndex(window._report.time_control.findText("Bullet"))
+    assert "No games match" in window._report.browser.toPlainText()
+    window.close()
+
+
+def test_report_on_an_empty_database(qapp):
+    window = MainWindow()
+    window.show_report()
+    assert "No games in your mistake database yet" in window._report.browser.toPlainText()
+    window.close()

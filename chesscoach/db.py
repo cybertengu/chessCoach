@@ -331,6 +331,15 @@ class MistakeDB:
             ).fetchone()
         return row is not None
 
+    def mistake_game(self, mistake_id: int) -> sqlite3.Row | None:
+        """The game a stored mistake came from: its ``pgn``, ``link``, ``my_color`` and the ``ply``."""
+        with self.connect() as conn:
+            return conn.execute(
+                """SELECT g.pgn, g.link, g.my_color, m.ply FROM mistakes m
+                   JOIN games g ON g.id = m.game_id WHERE m.id = ?""",
+                (mistake_id,),
+            ).fetchone()
+
     def retag(
         self,
         find_reply: ReplyFinder | None = None,
