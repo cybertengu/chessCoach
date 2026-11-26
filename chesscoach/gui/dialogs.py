@@ -155,12 +155,12 @@ class PastePGNDialog(QDialog):
         self.editor.setPlaceholderText('[Event "..."]\n\n1. e4 e5 2. Nf3 ...')
         layout.addWidget(self.editor)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Analyse  (Ctrl+Enter)")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Analyze  (Ctrl+Enter)")
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancel  (Esc)")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-        # Enter makes a new line in the editor, so analysing needs Ctrl+Enter.
+        # Enter makes a new line in the editor, so analyzing needs Ctrl+Enter.
         for keys in ("Ctrl+Return", "Ctrl+Enter"):
             QShortcut(QKeySequence(keys), self, activated=self.accept)
 
@@ -169,7 +169,7 @@ class PastePGNDialog(QDialog):
 
 
 class ChessComDialog(QDialog):
-    """Fetch a user's recent games and pick one to analyse."""
+    """Fetch a user's recent games and pick one to analyze."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -202,7 +202,7 @@ class ChessComDialog(QDialog):
         layout.addWidget(self.status)
 
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Analyse  (Enter)")
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Analyze  (Enter)")
         self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancel  (Esc)")
         self.fetch_button.setText("Fetch  (Enter)")
         self.buttons.accepted.connect(self.accept)
@@ -236,7 +236,7 @@ class ChessComDialog(QDialog):
             self.games.setCurrentRow(0)
             self.games.setFocus()
         self.status.setText(
-            f"{len(games)} games. j/k to choose, Enter to analyse, / to change the username."
+            f"{len(games)} games. j/k to choose, Enter to analyze, / to change the username."
         )
 
     def _show_error(self, message: str) -> None:

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import chess
 import chess.engine
 
-from .analysis import DEFAULT_NODES, Evaluation, MoveAnalysis, _line_san, analyse_position
+from .analysis import DEFAULT_NODES, Evaluation, MoveAnalysis, _line_san, analyze_position
 from .classify import DEFAULT_THRESHOLDS, Judgement, Thresholds, judge_loss, win_percent
 
 
@@ -67,7 +67,7 @@ def evaluate_attempt(
     original_after = win_percent(mistake.eval_after.pov(mover))
 
     board.push(attempt)
-    info = analyse_position(engine, board, chess.engine.Limit(nodes=nodes))
+    info = analyze_position(engine, board, chess.engine.Limit(nodes=nodes))
     win_after = win_percent(info.evaluation.pov(mover))
 
     if attempt.uci() == mistake.best_move_uci:

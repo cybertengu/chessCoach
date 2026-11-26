@@ -1,4 +1,4 @@
-"""Main window: load a game, analyse it, and browse your mistakes."""
+"""Main window: load a game, analyze it, and browse your mistakes."""
 
 from __future__ import annotations
 
@@ -360,7 +360,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"chessCoach — {h.get('White', '?')} vs {h.get('Black', '?')}")
         self.summary.setText(
             f"<h3>{h.get('White', '?')} vs {h.get('Black', '?')}</h3>"
-            f"{h.get('Date', '')} · {h.get('Result', '')} · <i>{source}</i><br>Analysing…"
+            f"{h.get('Date', '')} · {h.get('Result', '')} · <i>{source}</i><br>Analyzing…"
         )
         self.mistakes.clear()
         self.details.clear()
@@ -380,7 +380,7 @@ class MainWindow(QMainWindow):
         self.progress.setValue(0)
         self.progress.show()
         self.cancel_button.show()
-        self.statusBar().showMessage("Analysing with Stockfish…")
+        self.statusBar().showMessage("Analyzing with Stockfish…")
         thread = TaskThread(work, self)
         thread.progress.connect(self._on_progress)
         thread.succeeded.connect(self._analysis_done)
@@ -654,7 +654,7 @@ class MainWindow(QMainWindow):
         self.retry_panel.show()
 
     def _original_move_marks(self, j: MoveJudgement) -> list:
-        """Tint the from/to squares of the move you actually played, in its severity colour."""
+        """Tint the from/to squares of the move you actually played, in its severity color."""
         color = QColor(style.judgement_color(j.judgement))
         color.setAlpha(150)
         move = chess.Move.from_uci(j.move.uci)

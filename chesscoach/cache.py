@@ -45,7 +45,7 @@ def game_key(game: chess.pgn.Game, *, nodes: int, depth: int | None = None) -> s
 
 
 class AnalysisCache:
-    """One JSON file per analysed game, named after :func:`game_key`."""
+    """One JSON file per analyzed game, named after :func:`game_key`."""
 
     def __init__(self, directory: str | os.PathLike[str] | None = None):
         self.directory = Path(directory) if directory else default_cache_dir()
@@ -94,7 +94,7 @@ def analyze_with_cache(
     progress: ProgressCallback | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> GameAnalysis:
-    """Return the cached analysis of ``game``, or analyse it in parallel and cache it.
+    """Return the cached analysis of ``game``, or analyze it in parallel and cache it.
 
     Pass ``cache=None`` to always run the engines (nothing is stored).
     """

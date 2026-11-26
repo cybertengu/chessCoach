@@ -14,7 +14,7 @@ Goal: find the mistakes that keep repeating across my games, then practise them 
   - Context tags: opening (move ≤ 12), time trouble (clock < 10% of the start time), already winning/losing.
   - Optional: a local LLM (Ollama) writes a short explanation from the engine facts, never judging moves itself.
 - [ ] **4. Batch analysis + "my top mistakes" report**
-  - Analyse my last N Chess.com games (UsagiTengu) in one go.
+  - Analyze my last N Chess.com games (UsagiTengu) in one go.
   - Show counts by tag, phase and time control, trend over time, and links to example positions.
 - [ ] **5. Practice deck (spaced repetition)**
   - Turn my own mistake positions into puzzles that come back on a schedule (e.g. SM-2 / Leitner).
@@ -27,14 +27,14 @@ dark & minimal), pick one, then build it as a stack of small PRs checked with sc
 Stay on Qt Widgets; no QML/GTK rewrite.
 
 - [ ] **6. Theme**
-  - Light/dark mode that follows the Fedora system setting; one stylesheet with colour tokens.
+  - Light/dark mode that follows the Fedora system setting; one stylesheet with color tokens.
   - Rounded panels, consistent spacing, clear hover/focus states.
   - Toolbar icons from the system theme (Adwaita).
 - [ ] **7. Board & pieces**
-  - Board colour themes (brown / blue / green); coordinates outside the board.
+  - Board color themes (brown / blue / green); coordinates outside the board.
   - Vertical eval bar beside the board.
   - Animated piece moves; optional move / capture / "solved" sounds.
-  - Extra piece sets, only ones whose licence allows it.
+  - Extra piece sets, only ones whose license allows it.
 - [ ] **8. Right-hand panel**
   - Mistakes as cards: severity stripe, move, win % drop, ✓ / 👁 badges.
   - Big puzzle feedback banner ("✓ Good move!" / "✗ Still a blunder") plus a brief board flash.
