@@ -7,10 +7,8 @@ from dataclasses import dataclass
 import chess
 import chess.engine
 
-from .analysis import DEFAULT_DEPTH, Evaluation, MoveAnalysis, _line_san, analyse_position
+from .analysis import DEFAULT_NODES, Evaluation, MoveAnalysis, _line_san, analyse_position
 from .classify import DEFAULT_THRESHOLDS, Judgement, Thresholds, judge_loss, win_percent
-
-RETRY_MAX_SECONDS = 0.6
 
 
 @dataclass(frozen=True)
@@ -55,8 +53,7 @@ def evaluate_attempt(
     mistake: MoveAnalysis,
     attempt: chess.Move,
     *,
-    depth: int = DEFAULT_DEPTH,
-    max_seconds: float = RETRY_MAX_SECONDS,
+    nodes: int = DEFAULT_NODES,
     thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> AttemptResult:
     """Score ``attempt`` played in the position before ``mistake``."""
@@ -70,7 +67,7 @@ def evaluate_attempt(
     original_after = win_percent(mistake.eval_after.pov(mover))
 
     board.push(attempt)
-    info = analyse_position(engine, board, chess.engine.Limit(depth=depth, time=max_seconds))
+    info = analyse_position(engine, board, chess.engine.Limit(nodes=nodes))
     win_after = win_percent(info.evaluation.pov(mover))
 
     if attempt.uci() == mistake.best_move_uci:

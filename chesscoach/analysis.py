@@ -12,9 +12,10 @@ import chess.pgn
 # Centipawn value used to represent "mate" so evaluations can be compared.
 MATE_CP = 100_000
 
-DEFAULT_DEPTH = 16
-# Cap on thinking time per position so long endgames don't stall analysis.
-DEFAULT_MAX_SECONDS = 0.25
+# Nodes searched per position. A fixed node budget on a single-threaded engine
+# gives the same result on every run, unlike a time limit or multiple threads.
+# 200k nodes is roughly depth 17-20 in the middlegame.
+DEFAULT_NODES = 200_000
 
 
 @dataclass(frozen=True)
@@ -80,7 +81,8 @@ class MoveAnalysis:
 class GameAnalysis:
     headers: dict[str, str]
     moves: list[MoveAnalysis]
-    depth: int
+    depth: int | None = None  # optional depth cap used for the search
+    nodes: int | None = None  # node budget per position
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -93,7 +95,12 @@ class GameAnalysis:
             m["eval_before"] = Evaluation(**m["eval_before"])
             m["eval_after"] = Evaluation(**m["eval_after"])
             moves.append(MoveAnalysis(**m))
-        return cls(headers=dict(data["headers"]), moves=moves, depth=data["depth"])
+        return cls(
+            headers=dict(data["headers"]),
+            moves=moves,
+            depth=data.get("depth"),
+            nodes=data.get("nodes"),
+        )
 
 
 ProgressCallback = Callable[[int, int], None]
@@ -102,7 +109,13 @@ ProgressCallback = Callable[[int, int], None]
 def analyse_position(
     engine: chess.engine.SimpleEngine, board: chess.Board, limit: chess.engine.Limit
 ) -> PositionInfo:
-    """Evaluate one position. Finished games are scored without the engine."""
+    """Evaluate one position. Finished games are scored without the engine.
+
+    Every search starts from a cleared hash table (``ucinewgame``), so the
+    result depends only on the position and ``limit``, not on what the engine
+    searched before. Combined with one thread and a node limit this makes
+    the evaluation reproducible.
+    """
     if board.is_checkmate():
         # The side to move has been mated.
         loser_sign = -1 if board.turn == chess.WHITE else 1
@@ -110,7 +123,7 @@ def analyse_position(
     if board.is_game_over(claim_draw=False):
         return PositionInfo(Evaluation(cp=0), None, [])
 
-    info = engine.analyse(board, limit)
+    info = engine.analyse(board, limit, game=object())
     pv = list(info.get("pv") or [])
     return PositionInfo(Evaluation.from_score(info["score"]), pv[0] if pv else None, pv)
 
@@ -130,25 +143,26 @@ def analyze_game(
     game: chess.pgn.Game,
     engine: chess.engine.SimpleEngine,
     *,
-    depth: int = DEFAULT_DEPTH,
-    max_seconds: float | None = DEFAULT_MAX_SECONDS,
+    nodes: int = DEFAULT_NODES,
+    depth: int | None = None,
     progress: ProgressCallback | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> GameAnalysis:
     """Analyse every move in ``game``.
 
     Each position is searched once; the evaluation after move *n* is the
-    evaluation before move *n + 1*. The search stops at ``depth`` or after
-    ``max_seconds`` per position, whichever comes first.
+    evaluation before move *n + 1*. Each search stops after ``nodes`` nodes
+    (or at ``depth``, if given). With a single-threaded engine the result is
+    the same on every run.
     """
-    limit = chess.engine.Limit(depth=depth, time=max_seconds)
-    nodes = list(game.mainline())
-    total_positions = len(nodes) + 1
+    limit = chess.engine.Limit(nodes=nodes, depth=depth)
+    mainline = list(game.mainline())
+    total_positions = len(mainline) + 1
 
     board = game.board()
     positions: list[PositionInfo] = []
     boards: list[chess.Board] = [board.copy(stack=False)]
-    for node in nodes:
+    for node in mainline:
         board.push(node.move)
         boards.append(board.copy(stack=False))
 
@@ -160,7 +174,7 @@ def analyze_game(
             progress(i + 1, total_positions)
 
     moves: list[MoveAnalysis] = []
-    for i, node in enumerate(nodes):
+    for i, node in enumerate(mainline):
         before = boards[i]
         info = positions[i]
         moves.append(
@@ -180,4 +194,4 @@ def analyze_game(
             )
         )
 
-    return GameAnalysis(headers=dict(game.headers), moves=moves, depth=depth)
+    return GameAnalysis(headers=dict(game.headers), moves=moves, depth=depth, nodes=nodes)

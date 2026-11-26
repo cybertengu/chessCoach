@@ -29,8 +29,9 @@ If Stockfish is installed somewhere unusual, point to it with
 .venv/bin/chesscoach-cli analyze my_game.pgn --json   # full analysis as JSON
 ```
 
-Each position is searched to depth 16 or for 0.25 s, whichever comes first
-(`--depth`, `--max-seconds`).
+Each position is searched for a fixed 200,000 nodes by a single-threaded
+Stockfish (`--nodes`, optional `--depth` cap), so the same game always gets the
+same verdicts.
 
 Moves are judged like on Lichess: each position's evaluation is converted to a
 win percentage, and a move that gives away at least 5 / 10 / 15 percentage

@@ -38,3 +38,21 @@ def test_round_trips_through_json(engine):
     result = analyze_game(game, engine, depth=6)
     restored = GameAnalysis.from_dict(json.loads(json.dumps(result.to_dict())))
     assert restored == result
+
+
+def test_same_game_gives_same_result(engine):
+    # A node limit, one thread and a cleared hash per position make the
+    # result independent of what the engine searched before.
+    game = read_game((DATA / "hung_queen.pgn").read_text())
+    first = analyze_game(game, engine, nodes=30_000)
+    analyze_game(read_game((DATA / "opera_game.pgn").read_text()), engine, nodes=30_000)
+    second = analyze_game(game, engine, nodes=30_000)
+    assert first == second
+    assert first.nodes == 30_000
+
+
+def test_loads_analysis_saved_without_nodes(engine):
+    game = read_game((DATA / "hung_queen.pgn").read_text())
+    data = analyze_game(game, engine, depth=6).to_dict()
+    del data["nodes"]
+    assert GameAnalysis.from_dict(data).nodes is None

@@ -55,16 +55,16 @@ def find_stockfish(explicit: str | os.PathLike[str] | None = None) -> str:
 def open_engine(
     path: str | os.PathLike[str] | None = None,
     *,
-    threads: int | None = None,
-    hash_mb: int = 128,
+    threads: int = 1,
+    hash_mb: int = 16,
 ) -> Iterator[chess.engine.SimpleEngine]:
-    """Start Stockfish and make sure it is shut down afterwards."""
+    """Start Stockfish and make sure it is shut down afterwards.
+
+    One thread by default: a multi-threaded search is not reproducible.
+    """
     engine = chess.engine.SimpleEngine.popen_uci(find_stockfish(path))
     try:
-        options: dict[str, int] = {"Hash": hash_mb}
-        if threads is None:
-            threads = max(1, (os.cpu_count() or 2) // 2)
-        options["Threads"] = threads
+        options = {"Hash": hash_mb, "Threads": threads}
         engine.configure({k: v for k, v in options.items() if k in engine.options})
         yield engine
     finally:
