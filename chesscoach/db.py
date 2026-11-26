@@ -3,7 +3,8 @@
 One row per flagged move you made (``mistakes``), the game it came from
 (``games``), and every retry event: each attempt and each time you revealed
 the answer (``retries``). The ``mistake_stats`` view sums the retries up per
-mistake. Later features (pattern tags, reports, the practice deck) query this.
+mistake, and ``mistake_tags`` holds each mistake's pattern tags. Later
+features (reports, the practice deck) query this.
 
 The schema is versioned with ``PRAGMA user_version``; to change it, append a
 script to ``MIGRATIONS``. Never edit a script that has already shipped.
@@ -94,6 +95,21 @@ MIGRATIONS: list[str] = [
         COALESCE(MAX(r.kind = 'reveal'), 0) AS revealed
     FROM mistakes m LEFT JOIN retries r ON r.mistake_id = m.id
     GROUP BY m.id;
+    """,
+    # 2: pattern tags (see chesscoach.tags).
+    """
+    -- The opponent's best reply line after your move, space-separated SAN.
+    ALTER TABLE mistakes ADD COLUMN refutation_line_san TEXT;
+    -- TAGGER_VERSION the tags were computed with; NULL = not tagged yet.
+    ALTER TABLE mistakes ADD COLUMN tags_version INTEGER;
+
+    CREATE TABLE mistake_tags (
+        mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
+        tag TEXT NOT NULL,                 -- a chesscoach.tags.Tag value, e.g. 'hung_piece'
+        PRIMARY KEY (mistake_id, tag)
+    ) STRICT;
+
+    CREATE INDEX mistake_tags_by_tag ON mistake_tags (tag);
     """,
 ]
 
@@ -240,13 +256,15 @@ class MistakeDB:
             added = 0
             for j in flagged_moves(judgements, my_color):
                 m = j.move
+                refutation = refutation_line(analysis, m.ply)
                 cur = conn.execute(
                     """
                     INSERT INTO mistakes (game_id, ply, move_number, color, fen, move_uci,
                         move_san, best_uci, best_san, best_line_san, eval_before_cp,
                         eval_before_mate, eval_after_cp, eval_after_mate, win_before,
-                        win_after, win_loss, judgement, clock_seconds)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        win_after, win_loss, judgement, clock_seconds,
+                        refutation_line_san)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (game_id, ply) DO NOTHING
                     """,
                     (
@@ -255,6 +273,7 @@ class MistakeDB:
                         m.eval_before.cp, m.eval_before.mate, m.eval_after.cp,
                         m.eval_after.mate, j.win_before, j.win_after, j.win_loss,
                         j.judgement.value, m.clock_seconds,
+                        None if refutation is None else " ".join(refutation),
                     ),
                 )
                 added += cur.rowcount
@@ -280,6 +299,15 @@ class MistakeDB:
         """Log that the answer to a mistake was shown."""
         with self.connect() as conn:
             conn.execute("INSERT INTO retries (mistake_id, kind) VALUES (?, 'reveal')", (mistake_id,))
+
+
+def refutation_line(analysis: GameAnalysis, ply: int) -> list[str] | None:
+    """The opponent's best line after the move at ``ply`` (1-based), in SAN.
+
+    That is the engine line of the next position, which the analysis already
+    has. None after the game's last move: nothing was searched there.
+    """
+    return analysis.moves[ply].best_line_san if ply < len(analysis.moves) else None
 
 
 def mistake_from_row(row: sqlite3.Row) -> MoveAnalysis:

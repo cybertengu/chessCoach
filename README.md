@@ -103,8 +103,8 @@ You can also reach a puzzle by stepping to one of your bad moves and pressing **
 Every inaccuracy, mistake and blunder **you** made is saved to a local SQLite
 file, `~/.local/share/chesscoach/mistakes.sqlite3` (`$XDG_DATA_HOME` is
 respected; set `CHESSCOACH_DB` to use another file). For each one it keeps
-the position, your move, the engine's move and line, the win % lost, the game
-link, date, time control and your clock. Every retry attempt and every
+the position, your move, the engine's move and line, the opponent's best reply
+to your move, the win % lost, the game link, date, time control and your clock. Every retry attempt and every
 "Show correct move" is logged too; the `mistake_stats` view sums them up
 (attempts / solved / revealed). Opening the same game again adds nothing.
 

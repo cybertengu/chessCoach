@@ -229,3 +229,37 @@ def test_unwritable_location_raises_database_error(tmp_path):
     blocker.write_text("")
     with pytest.raises(DatabaseError):
         _record(MistakeDB(blocker / "sub" / "x.db"))
+
+
+def test_stores_the_opponents_best_reply_line():
+    db = MistakeDB()
+    ids = _record(db).mistake_ids
+    with db.connect() as conn:
+        rows = dict(conn.execute("SELECT ply, refutation_line_san FROM mistakes"))
+    # 2. Qh5: the next position's engine line. 3. Qxe5+ ended the game: nothing searched.
+    assert rows == {3: "Nc6 Nf6", 5: None}
+    assert set(ids) == {3, 5}
+
+
+def test_version_1_database_upgrades_with_its_mistakes(tmp_path):
+    path = tmp_path / "v1.db"
+    with sqlite3.connect(path) as raw:
+        raw.executescript(db_mod.MIGRATIONS[0])
+        raw.execute("PRAGMA user_version = 1")
+        raw.execute(
+            "INSERT INTO games (key, my_color) VALUES ('k', 'white')"
+        )
+        raw.execute(
+            """INSERT INTO mistakes (game_id, ply, move_number, color, fen, move_uci, move_san,
+                   eval_before_cp, eval_after_cp, win_before, win_after, win_loss, judgement)
+               VALUES (1, 5, 3, 'white', ?, 'h5e5', 'Qxe5+', -30, -900, 46, 4, 42, 'blunder')""",
+            (chess.STARTING_FEN,),
+        )
+    db = MistakeDB(path)
+    with db.connect() as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db_mod.SCHEMA_VERSION
+        row = conn.execute("SELECT refutation_line_san, tags_version FROM mistakes").fetchone()
+        assert tuple(row) == (None, None)
+        conn.execute("INSERT INTO mistake_tags VALUES (1, 'hung_piece')")
+        conn.execute("DELETE FROM mistakes")
+        assert conn.execute("SELECT COUNT(*) FROM mistake_tags").fetchone()[0] == 0
