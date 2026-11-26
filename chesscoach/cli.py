@@ -16,6 +16,7 @@ from .cache import AnalysisCache, analyze_with_cache
 from .chesscom import ChessComError, recent_games
 from .classify import judge_game, player_color, side_accuracy
 from .db import DatabaseError, MistakeDB, parse_time_control, refutation_line
+from .deck import INTERVALS, NEW_PER_DAY, Deck, DeckSummary, Grade
 from .engine import EngineNotFoundError, open_engine
 from .pgn import PGNError, read_game_file
 from .report import Filters, Period, Report, ReportMistake, TimeClass, build_report
@@ -300,6 +301,43 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_deck(args: argparse.Namespace) -> int:
+    _print_deck(Deck(MistakeDB()).summary(dt.date.today(), days_ahead=args.days))
+    return 0
+
+
+def _interval(days: int) -> str:
+    if days % 30 == 0:
+        return f"{days // 30} mo"
+    return f"{days // 7} wk" if days % 7 == 0 else f"{days} d"
+
+
+def _print_deck(s: DeckSummary) -> None:
+    """The deck's state; it names no positions, so nothing gives an answer away."""
+    print("Practice deck")
+    if not s.in_deck and not s.new_waiting:
+        print("  No puzzles yet. Analyze some games first (chesscoach-cli batch YOUR_NAME).")
+        return
+    print(f"  Today: {_plural(s.due, 'card')} due + {s.new_today} new = "
+          f"{_plural(s.session_size, 'puzzle')}")
+    print(f"  In the deck: {_plural(s.in_deck, 'card')}; {s.new_waiting} more waiting "
+          f"({NEW_PER_DAY} new a day)")
+    print("\nBoxes (next review after)")
+    for box, count in s.boxes.items():
+        print(f"  {box}  {_interval(INTERVALS[box]):>5}  {count:>4}  {'#' * min(count, 60)}")
+    print("\nComing up")
+    for week in range(0, len(s.upcoming), 7):
+        print("  " + "   ".join(f"{day:%a %d}: {n}" for day, n in s.upcoming[week:week + 7]))
+    total = sum(s.recent.values())
+    print("\nLast 30 days")
+    if total:
+        passed = s.recent.get(Grade.PASS, 0)
+        print(f"  {_plural(total, 'review')}: {passed} pass, {s.recent.get(Grade.HARD, 0)} hard, "
+              f"{s.recent.get(Grade.FAIL, 0)} fail ({100 * passed / total:.0f}% passed first try)")
+    else:
+        print("  No reviews yet.")
+
+
 def _cmd_recent(args: argparse.Namespace) -> int:
     games = recent_games(args.username, count=args.count)
     if not games:
@@ -420,6 +458,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--examples", type=int, default=3, metavar="N", help="Example positions per row (default 3)"
     )
     report.set_defaults(func=_cmd_report)
+
+    deck = sub.add_parser(
+        "deck",
+        help="Show your practice deck: puzzles due today, boxes, what's coming up",
+        description=(
+            "Your mistakes come back as puzzles on a schedule (Leitner boxes). This shows "
+            "how many are due and how the deck is doing; it never shows a position or answer."
+        ),
+    )
+    deck.add_argument(
+        "--days", type=int, default=7, metavar="N", help="Days ahead to show (default 7)"
+    )
+    deck.set_defaults(func=_cmd_deck)
 
     recent = sub.add_parser("recent", help="List your recent Chess.com games")
     recent.add_argument("username", help="Chess.com username")
