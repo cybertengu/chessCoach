@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from chesscoach.engine import EngineNotFoundError, find_stockfish, open_engine
+from chesscoach.engine import EngineNotFoundError, find_stockfish, open_engine, open_engines
 
 DATA = Path(__file__).parent / "data"
 
@@ -24,3 +24,11 @@ def engine():
         pytest.skip("Stockfish not installed")
     with open_engine(threads=1) as eng:
         yield eng
+
+
+@pytest.fixture(scope="session")
+def engines():
+    if not _have_stockfish():
+        pytest.skip("Stockfish not installed")
+    with open_engines(3) as engs:
+        yield engs

@@ -1,6 +1,7 @@
 import json
 
 import chess
+import pytest
 
 from chesscoach.analysis import MATE_CP, GameAnalysis, analyze_game
 from chesscoach.pgn import read_game
@@ -56,3 +57,30 @@ def test_loads_analysis_saved_without_nodes(engine):
     data = analyze_game(game, engine, depth=6).to_dict()
     del data["nodes"]
     assert GameAnalysis.from_dict(data).nodes is None
+
+
+def test_parallel_engines_give_the_same_result(engine, engines):
+    game = read_game((DATA / "opera_game.pgn").read_text())
+    calls = []
+    parallel = analyze_game(
+        game, engines, nodes=20_000, progress=lambda d, t: calls.append((d, t))
+    )
+    assert parallel == analyze_game(game, engine, nodes=20_000)
+    assert [d for d, _ in calls] == list(range(1, 35))
+
+
+def test_cancel_stops_parallel_analysis(engines):
+    game = read_game((DATA / "opera_game.pgn").read_text())
+    calls = []
+    with pytest.raises(InterruptedError):
+        analyze_game(
+            game,
+            engines,
+            nodes=20_000,
+            progress=lambda d, t: calls.append(d),
+            should_stop=lambda: len(calls) >= 2,
+        )
+    # Only the searches already running finish after the stop request.
+    assert len(calls) == 2
+    # The engines are still usable afterwards.
+    assert analyze_game(game, engines, depth=4).moves

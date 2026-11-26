@@ -11,7 +11,7 @@ import chess
 from .analysis import DEFAULT_NODES, GameAnalysis, analyze_game
 from .chesscom import ChessComError, recent_games
 from .classify import judge_game, player_color, side_accuracy
-from .engine import EngineNotFoundError, open_engine
+from .engine import EngineNotFoundError, open_engines
 from .pgn import PGNError, read_game_file
 
 
@@ -55,9 +55,9 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     def progress(done: int, total: int) -> None:
         print(f"\rAnalysing position {done}/{total}", end="", file=sys.stderr, flush=True)
 
-    with open_engine(args.engine) as engine:
+    with open_engines(args.engines, args.engine) as engines:
         result = analyze_game(
-            game, engine, nodes=args.nodes, depth=args.depth, progress=progress
+            game, engines, nodes=args.nodes, depth=args.depth, progress=progress
         )
     print(file=sys.stderr)
 
@@ -103,6 +103,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyze.add_argument("--depth", type=int, help="Optional depth cap per position")
     analyze.add_argument("--engine", help="Path to the Stockfish binary")
+    analyze.add_argument(
+        "--engines",
+        type=int,
+        help="Number of Stockfish processes to run in parallel (default: one per CPU core)",
+    )
     analyze.add_argument("--user", help="Your username, to mark your own mistakes")
     analyze.add_argument("--json", action="store_true", help="Print the full analysis as JSON")
     analyze.set_defaults(func=_cmd_analyze)

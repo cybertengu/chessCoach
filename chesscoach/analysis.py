@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import queue
+import threading
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from typing import Callable
 
@@ -139,9 +143,55 @@ def _line_san(board: chess.Board, moves: list[chess.Move], max_len: int = 8) -> 
     return sans
 
 
+def _analyse_positions(
+    engines: list[chess.engine.SimpleEngine],
+    boards: list[chess.Board],
+    limit: chess.engine.Limit,
+    progress: ProgressCallback | None,
+    should_stop: Callable[[], bool] | None,
+) -> list[PositionInfo]:
+    """Search ``boards`` with a pool of engines, one search per engine at a time."""
+    idle: queue.SimpleQueue[chess.engine.SimpleEngine] = queue.SimpleQueue()
+    for e in engines:
+        idle.put(e)
+    cancelled = threading.Event()
+
+    def search(board: chess.Board) -> PositionInfo | None:
+        if cancelled.is_set():
+            return None
+        e = idle.get()
+        try:
+            return analyse_position(e, board, limit)
+        finally:
+            idle.put(e)
+
+    def check_stop() -> None:
+        if should_stop and should_stop():
+            raise InterruptedError("Analysis cancelled")
+
+    check_stop()
+    results: list[PositionInfo | None] = [None] * len(boards)
+    with ThreadPoolExecutor(max_workers=len(engines)) as pool:
+        futures = {pool.submit(search, b): i for i, b in enumerate(boards)}
+        try:
+            for done, future in enumerate(as_completed(futures), 1):
+                results[futures[future]] = future.result()
+                if progress:
+                    progress(done, len(boards))
+                check_stop()
+        except BaseException:
+            # Skip the positions not started yet; running searches finish
+            # (one per engine) before the pool shuts down.
+            cancelled.set()
+            for future in futures:
+                future.cancel()
+            raise
+    return [r for r in results if r is not None]
+
+
 def analyze_game(
     game: chess.pgn.Game,
-    engine: chess.engine.SimpleEngine,
+    engine: chess.engine.SimpleEngine | Sequence[chess.engine.SimpleEngine],
     *,
     nodes: int = DEFAULT_NODES,
     depth: int | None = None,
@@ -154,24 +204,27 @@ def analyze_game(
     evaluation before move *n + 1*. Each search stops after ``nodes`` nodes
     (or at ``depth``, if given). With a single-threaded engine the result is
     the same on every run.
+
+    ``engine`` may be a list of engines (see :func:`~chesscoach.engine.open_engines`);
+    positions are then searched in parallel, one per engine. Because every
+    search starts from a cleared hash, the result does not depend on how many
+    engines are used. ``progress`` and ``should_stop`` are called from the
+    calling thread.
     """
+    engines = [engine] if isinstance(engine, chess.engine.SimpleEngine) else list(engine)
+    if not engines:
+        raise ValueError("analyze_game needs at least one engine")
     limit = chess.engine.Limit(nodes=nodes, depth=depth)
     mainline = list(game.mainline())
     total_positions = len(mainline) + 1
 
     board = game.board()
-    positions: list[PositionInfo] = []
     boards: list[chess.Board] = [board.copy(stack=False)]
     for node in mainline:
         board.push(node.move)
         boards.append(board.copy(stack=False))
 
-    for i, b in enumerate(boards):
-        if should_stop and should_stop():
-            raise InterruptedError("Analysis cancelled")
-        positions.append(analyse_position(engine, b, limit))
-        if progress:
-            progress(i + 1, total_positions)
+    positions = _analyse_positions(engines, boards, limit, progress, should_stop)
 
     moves: list[MoveAnalysis] = []
     for i, node in enumerate(mainline):

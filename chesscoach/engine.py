@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import shutil
-from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Iterator
 
@@ -69,3 +70,41 @@ def open_engine(
         yield engine
     finally:
         engine.quit()
+
+
+def default_engine_count() -> int:
+    """How many engines to run in parallel: about one per physical core.
+
+    ``os.cpu_count()`` counts hyper-threads; extra engines on those barely
+    speed things up, so use half of them (at least one, at most eight).
+    """
+    return max(1, min(8, (os.cpu_count() or 2) // 2))
+
+
+@contextmanager
+def open_engines(
+    count: int | None = None,
+    path: str | os.PathLike[str] | None = None,
+    *,
+    hash_mb: int = 16,
+) -> Iterator[list[chess.engine.SimpleEngine]]:
+    """Start ``count`` single-threaded engines (in parallel) and quit them afterwards."""
+    count = count or default_engine_count()
+    managers = [open_engine(path, hash_mb=hash_mb) for _ in range(count)]
+    with ExitStack() as stack:
+        # Starting Stockfish takes a moment (loading the network), so start
+        # them side by side; register each one for shutdown on this thread.
+        with ThreadPoolExecutor(max_workers=count) as pool:
+            futures = [pool.submit(m.__enter__) for m in managers]
+        engines: list[chess.engine.SimpleEngine] = []
+        error: BaseException | None = None
+        for manager, future in zip(managers, futures):
+            try:
+                engines.append(future.result())
+            except Exception as exc:  # noqa: BLE001 - re-raised below
+                error = error or exc
+                continue
+            stack.push(manager.__exit__)
+        if error is not None:
+            raise error
+        yield engines
