@@ -40,6 +40,9 @@ win percentage, and a move that gives away at least 5 / 10 / 15 percentage
 points versus the engine's best move is an inaccuracy (`?!`), mistake (`?`)
 or blunder (`??`).
 
+With `--user`, your own inaccuracies, mistakes and blunders are also saved to
+the mistake database (see below); `--no-save` skips that.
+
 ## Importing from Chess.com
 
 ```bash
@@ -92,6 +95,21 @@ hidden: the best move appears nowhere until you ask for it.
   marks the mistake 👁 in the list.
 
 You can also reach a puzzle by stepping to one of your bad moves and pressing **T**.
+
+### Mistake database
+
+Every inaccuracy, mistake and blunder **you** made is saved to a local SQLite
+file, `~/.local/share/chesscoach/mistakes.sqlite3` (`$XDG_DATA_HOME` is
+respected; set `CHESSCOACH_DB` to use another file). For each one it keeps
+the position, your move, the engine's move and line, the win % lost, the game
+link, date, time control and your clock. Every retry attempt and every
+"Show correct move" is logged too; the `mistake_stats` view sums them up
+(attempts / solved / revealed). Opening the same game again adds nothing.
+
+```bash
+sqlite3 ~/.local/share/chesscoach/mistakes.sqlite3 \
+  "SELECT judgement, COUNT(*) FROM mistakes GROUP BY judgement"
+```
 
 ### Keyboard (vim-style)
 
