@@ -2,7 +2,7 @@
 Type=Application
 Name=chessCoach
 GenericName=Chess Game Analysis
-Comment=Find the mistakes in your chess games and practise better moves
+Comment=Find the mistakes in your chess games and practice better moves
 Exec=@EXEC@ %f
 Icon=chesscoach
 Terminal=false

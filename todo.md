@@ -1,6 +1,6 @@
 # chessCoach TODO
 
-Goal: find the mistakes that keep repeating across my games, then practise them until they stick.
+Goal: find the mistakes that keep repeating across my games, then practice them until they stick.
 
 - [x] **1. Consistent, faster analysis**
   - Same game → same verdicts every run: single-threaded Stockfish with a fixed node budget instead of a time cap.

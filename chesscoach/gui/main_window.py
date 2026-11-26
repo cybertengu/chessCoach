@@ -393,7 +393,7 @@ class MainWindow(QMainWindow):
         if self._thread and self._thread.isRunning():
             self._thread.requestInterruption()
             self._thread.wait()
-            self.statusBar().showMessage("Analysis cancelled", 4000)
+            self.statusBar().showMessage("Analysis canceled", 4000)
         self._thread = None
         self._analysis_finished()
 

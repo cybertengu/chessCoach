@@ -181,7 +181,7 @@ class InteractiveBoard(BoardWidget):
         if len(candidates) > 1:  # promotion: let the player choose
             move = self._ask_promotion(candidates)
             if move is None:
-                return True  # handled (cancelled)
+                return True  # handled (canceled)
         self.selected = None
         self.move_made.emit(move)
         return True
