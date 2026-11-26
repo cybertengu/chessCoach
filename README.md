@@ -129,6 +129,7 @@ read the engine's lines; they never judge a move themselves.
 | Hung a piece | Missed capture | Opening (move ≤ 12) |
 | Allowed mate | Missed fork / pin / skewer | Time trouble (clock < 10% of the start) |
 | Back-rank weakness | Missed mate / back-rank mate | Already winning / losing (win % ≥ 75 / ≤ 25) |
+| | | Endgame (after the opening: no queens, or ≤ 13 points of pieces each besides king and pawns) |
 
 "What you missed" tags give the answer away, so the app only shows them once
 a puzzle is solved or revealed. Every number the rules use is in
