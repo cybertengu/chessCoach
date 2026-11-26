@@ -174,3 +174,64 @@ def test_solving_the_last_mistake_does_not_offer_next(qapp, monkeypatch):
     assert "Next mistake" not in text
     assert not window.retry_panel.next_button.isEnabled()
     window.close()
+
+
+@requires_stockfish
+def test_mistakes_and_retries_are_saved_to_the_database(qapp, monkeypatch):
+    from chesscoach.db import MistakeDB
+
+    def open_and_analyse():
+        window = MainWindow()
+        monkeypatch.setattr(window, "_ask_my_color", lambda headers: chess.WHITE)
+        window.load_game(read_game((DATA / "hung_queen.pgn").read_text()), "test")
+        wait_until(qapp, lambda: window.analysis is not None)
+        return window
+
+    window = open_and_analyse()
+    mine = [j.move.ply for j in window.judgements if j.judgement.is_error and j.move.mover == chess.WHITE]
+    assert sorted(window.mistake_ids) == mine and 5 in mine
+    assert "saved" in window.statusBar().currentMessage()
+
+    window.start_retry(5)
+    window.board.move_made.emit(chess.Move.from_uci("h5e5"))  # the blunder again
+    wait_until(qapp, lambda: "✗" in window.retry_panel.feedback.text())
+    window.retry_panel.answer_button.click()
+    window.retry_panel.answer_button.click()  # a second click is not a second reveal
+    window.board.move_made.emit(chess.Move.from_uci(window.judgements[4].move.best_move_uci))
+    wait_until(qapp, lambda: "✓" in window.retry_panel.feedback.text())
+    window.close()
+
+    # Opening the same game again adds nothing.
+    window = open_and_analyse()
+    assert "already" in window.statusBar().currentMessage()
+    window.close()
+
+    with MistakeDB().connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM mistakes").fetchone()[0] == len(mine)
+        stats = conn.execute(
+            "SELECT s.* FROM mistake_stats s JOIN mistakes m ON m.id = s.mistake_id WHERE m.ply = 5"
+        ).fetchone()
+        kinds = [r[0] for r in conn.execute("SELECT kind FROM retries ORDER BY id")]
+    assert (stats["attempts"], stats["solved"], stats["revealed"]) == (2, 1, 1)
+    assert kinds == ["attempt", "reveal", "attempt"]
+
+
+
+@requires_stockfish
+def test_database_errors_do_not_break_the_window(qapp, monkeypatch, tmp_path):
+    from chesscoach.db import MistakeDB
+
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("")
+    window = MainWindow()
+    window.db = MistakeDB(blocker / "mistakes.sqlite3")
+    monkeypatch.setattr(window, "_ask_my_color", lambda headers: chess.WHITE)
+    window.load_game(read_game((DATA / "hung_queen.pgn").read_text()), "test")
+    wait_until(qapp, lambda: window.analysis is not None)
+
+    assert "could not save" in window.statusBar().currentMessage()
+    assert window.mistakes.count() > 0
+    window.start_retry(5)
+    window.board.move_made.emit(chess.Move.from_uci("f1c4"))
+    wait_until(qapp, lambda: "✓" in window.retry_panel.feedback.text())
+    window.close()
