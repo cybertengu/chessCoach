@@ -13,7 +13,7 @@ Goal: find the mistakes that keep repeating across my games, then practice them 
   - Rule-based tags with python-chess: hung piece, missed capture, missed fork/pin/skewer, back-rank, missed mate, allowed mate.
   - Context tags: opening (move ≤ 12), time trouble (clock < 10% of the start time), already winning/losing.
   - Optional, not done yet: a local LLM (Ollama) writes a short explanation from the engine facts, never judging moves itself.
-- [ ] **4. Batch analysis + "my top mistakes" report**
+- [x] **4. Batch analysis + "my top mistakes" report**
   - Analyze my last N Chess.com games (UsagiTengu) in one go.
   - Show counts by tag, phase and time control, trend over time, and links to example positions.
 - [ ] **5. Practice deck (spaced repetition)**
@@ -42,4 +42,6 @@ Stay on Qt Widgets; no QML/GTK rewrite.
 - [ ] **9. Polish**
   - "Thinking…" overlay on the board while Stockfish works.
   - Start screen with big Open / Paste / Chess.com buttons.
+  - "Analyze my last N games" in the app (like `chesscoach-cli batch`), with a progress bar
+    and a Stop button.
   - Remember window size and splitter layout.
