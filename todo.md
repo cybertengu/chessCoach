@@ -1,12 +1,12 @@
 # chessCoach TODO
 
-Goal: find the mistakes that keep repeating across my games, then practise them until they stick.
+Goal: find the mistakes that keep repeating across my games, then practice them until they stick.
 
 - [x] **1. Consistent, faster analysis**
   - Same game → same verdicts every run: single-threaded Stockfish with a fixed node budget instead of a time cap.
   - Run several engine processes in parallel so a full game still takes ~10–20 s.
   - Cache results per game (hash of the moves) so re-opening a game is instant.
-- [ ] **2. Mistake database**
+- [x] **2. Mistake database**
   - Store every flagged position (FEN, move played, best move, win % lost, game link, date, time control, clock left) in a local SQLite file.
   - Record retry outcomes too (solved / revealed / attempts).
 - [ ] **3. Pattern tags**

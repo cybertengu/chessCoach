@@ -154,10 +154,10 @@ def _analyze_positions(
     idle: queue.SimpleQueue[chess.engine.SimpleEngine] = queue.SimpleQueue()
     for e in engines:
         idle.put(e)
-    cancelled = threading.Event()
+    canceled = threading.Event()
 
     def search(board: chess.Board) -> PositionInfo | None:
-        if cancelled.is_set():
+        if canceled.is_set():
             return None
         e = idle.get()
         try:
@@ -167,7 +167,7 @@ def _analyze_positions(
 
     def check_stop() -> None:
         if should_stop and should_stop():
-            raise InterruptedError("Analysis cancelled")
+            raise InterruptedError("Analysis canceled")
 
     check_stop()
     results: list[PositionInfo | None] = [None] * len(boards)
@@ -182,7 +182,7 @@ def _analyze_positions(
         except BaseException:
             # Skip the positions not started yet; running searches finish
             # (one per engine) before the pool shuts down.
-            cancelled.set()
+            canceled.set()
             for future in futures:
                 future.cancel()
             raise
