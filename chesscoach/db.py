@@ -197,6 +197,9 @@ class RecordedGame:
     mistake_ids: dict[int, int]  # ply -> mistakes.id, for every stored mistake of the game
     added: int  # how many of those were new
     tags: dict[int, list[Tag]]  # ply -> pattern tags, for the same mistakes
+    # Plies of the mistakes ever solved / whose answer was ever revealed (any session).
+    solved: frozenset[int] = frozenset()
+    revealed: frozenset[int] = frozenset()
 
 
 # Finds the opponent's best reply line after a stored mistake: (mistake, node budget) -> SAN.
@@ -319,7 +322,14 @@ class MistakeDB:
                 _store_tags(conn, row)
             ids = dict(conn.execute("SELECT ply, id FROM mistakes WHERE game_id = ?", (game_id,)))
             tags = _tags_by_ply(conn, game_id)
-        return RecordedGame(game_id, ids, added, tags)
+            stats = conn.execute(
+                """SELECT m.ply, s.solved, s.revealed FROM mistake_stats s
+                   JOIN mistakes m ON m.id = s.mistake_id WHERE m.game_id = ?""",
+                (game_id,),
+            ).fetchall()
+        solved = frozenset(r["ply"] for r in stats if r["solved"])
+        revealed = frozenset(r["ply"] for r in stats if r["revealed"])
+        return RecordedGame(game_id, ids, added, tags, solved, revealed)
 
     def is_stored(self, game: chess.pgn.Game) -> bool:
         """True if ``game`` is saved together with its PGN."""
