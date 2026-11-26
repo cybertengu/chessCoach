@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 from ..analysis import GameAnalysis
 from ..cache import AnalysisCache, analyze_with_cache
 from ..classify import Judgement, MoveJudgement, flagged_moves, judge_game, player_color, side_accuracy
+from ..db import DatabaseError, MistakeDB
 from ..engine import open_engine
 from ..retry import AttemptResult, evaluate_attempt
 from ..pgn import PGNError, read_game, read_game_file
@@ -121,6 +122,9 @@ class MainWindow(QMainWindow):
         self.revealed: set[int] = set()
         self._attempt_thread: TaskThread | None = None
         self._attempt_token = 0
+        # Your mistakes are saved to the mistake database; ply -> mistakes.id.
+        self.db = MistakeDB()
+        self.mistake_ids: dict[int, int] = {}
 
         self._build_actions()
         self._build_layout()
@@ -338,6 +342,7 @@ class MainWindow(QMainWindow):
         self.exit_retry(navigate=False)
         self.solved = set()
         self.revealed = set()
+        self.mistake_ids = {}
         self.cancel_analysis()
         self.game = game
         self.analysis = None
@@ -405,10 +410,10 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Analysis failed", message)
 
     def _analysis_done(self, analysis: GameAnalysis) -> None:
-        self.statusBar().showMessage("Analysis complete", 4000)
         self.analysis = analysis
         self.judgements = judge_game(analysis)
         self.my_color = self._ask_my_color(analysis.headers)
+        self.statusBar().showMessage(f"Analysis complete{self._save_mistakes()}", 6000)
         if self.my_color is not None:
             self.board.set_flipped(self.my_color == chess.BLACK)
         self.graph.set_judgements(self.judgements)
@@ -416,6 +421,32 @@ class MainWindow(QMainWindow):
         self._populate_move_table()
         self._populate_mistakes()
         self.go_to(self.current_ply)
+
+    def _save_mistakes(self) -> str:
+        """Store your mistakes in the mistake database; returns a note for the status bar."""
+        if self.analysis is None or self.my_color is None:
+            return ""
+        try:
+            recorded = self.db.record_game(self.analysis, self.judgements, self.my_color)
+        except DatabaseError as exc:
+            return f" · could not save your mistakes: {exc}"
+        self.mistake_ids = recorded.mistake_ids
+        if recorded.added:
+            n = recorded.added
+            return f" · saved {n} new mistake{'s' if n != 1 else ''} to your mistake database"
+        if recorded.mistake_ids:
+            return " · this game's mistakes are already in your mistake database"
+        return ""
+
+    def _log_retry(self, record, *args) -> None:
+        """Log a retry event for the mistake being retried; never interrupts the puzzle."""
+        mistake_id = self.mistake_ids.get(self.retry_ply)
+        if mistake_id is None:
+            return
+        try:
+            record(mistake_id, *args)
+        except DatabaseError as exc:
+            self.statusBar().showMessage(f"Could not save the retry: {exc}", 6000)
 
     def _ask_my_color(self, headers: dict[str, str]) -> chess.Color | None:
         """Work out which side the user played, asking if the names don't say."""
@@ -674,6 +705,7 @@ class MainWindow(QMainWindow):
     def _attempt_judged(self, token: int, board: chess.Board, result: AttemptResult) -> None:
         if token != self._attempt_token or self.retry_ply is None:
             return
+        self._log_retry(self.db.record_attempt, result)
         if result.solved:
             self.solved.add(self.retry_ply)
             self._populate_mistakes()
@@ -739,6 +771,8 @@ class MainWindow(QMainWindow):
         j = self._judgement_at(self.retry_ply)
         if j is None or not j.move.best_move_uci:
             return
+        if self.retry_ply not in self.revealed:
+            self._log_retry(self.db.record_reveal)
         self.revealed.add(self.retry_ply)
         self._populate_mistakes()
         self.start_retry(self.retry_ply)
