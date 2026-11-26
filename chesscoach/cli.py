@@ -12,6 +12,7 @@ from .analysis import DEFAULT_NODES, GameAnalysis
 from .cache import AnalysisCache, analyze_with_cache
 from .chesscom import ChessComError, recent_games
 from .classify import judge_game, player_color, side_accuracy
+from .db import DatabaseError, MistakeDB
 from .engine import EngineNotFoundError
 from .pgn import PGNError, read_game_file
 
@@ -67,6 +68,16 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     )
     print(file=sys.stderr)
 
+    mine = player_color(result.headers, args.user)
+    if mine is not None and not args.no_save:
+        db = MistakeDB()
+        recorded = db.record_game(result, judge_game(result), mine)
+        print(
+            f"Saved {_plural(recorded.added, 'new mistake')} to {db.path}"
+            f" ({len(recorded.mistake_ids)} stored for this game)",
+            file=sys.stderr,
+        )
+
     if args.json:
         json.dump(result.to_dict(), sys.stdout, indent=2)
         print()
@@ -117,7 +128,12 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument(
         "--no-cache", action="store_true", help="Re-analyse even if this game was analysed before"
     )
-    analyze.add_argument("--user", help="Your username, to mark your own mistakes")
+    analyze.add_argument(
+        "--user", help="Your username, to mark your own mistakes and save them to the mistake database"
+    )
+    analyze.add_argument(
+        "--no-save", action="store_true", help="Don't save your mistakes to the mistake database"
+    )
     analyze.add_argument("--json", action="store_true", help="Print the full analysis as JSON")
     analyze.set_defaults(func=_cmd_analyze)
 
@@ -133,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (PGNError, EngineNotFoundError, ChessComError, OSError) as exc:
+    except (PGNError, EngineNotFoundError, ChessComError, DatabaseError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
