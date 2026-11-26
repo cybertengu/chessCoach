@@ -6,7 +6,7 @@ from pathlib import Path
 
 import chess
 import chess.pgn
-from PySide6.QtCore import QEvent, QSettings, Qt
+from PySide6.QtCore import QEvent, QSettings, QSize, Qt
 from PySide6.QtGui import QAction, QBrush, QColor, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSplitter,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QToolBar,
@@ -36,10 +37,11 @@ from PySide6.QtWidgets import (
 from ..analysis import GameAnalysis
 from ..cache import AnalysisCache, analyze_with_cache
 from ..classify import Judgement, MoveJudgement, flagged_moves, judge_game, player_color, side_accuracy
-from ..db import DatabaseError, MistakeDB
+from ..db import DatabaseError, MistakeDB, parse_time_control, refutation_line
 from ..engine import open_engine
 from ..retry import AttemptResult, evaluate_attempt
 from ..pgn import PGNError, read_game, read_game_file
+from ..tags import Tag, tag_mistake
 from .board import Arrow
 from .dialogs import ChessComDialog, HelpDialog, PastePGNDialog, SideDialog, saved_username
 from .evalgraph import EvalGraph
@@ -99,6 +101,19 @@ FILTERS = [
 ]
 
 
+class RoomyRows(QStyledItemDelegate):
+    """List rows a little taller than Qt's guess.
+
+    Mistake rows have two lines (move, then tags); Qt sizes them by the
+    normal font, so a row starting with an emoji mark (taller fallback font)
+    would get its second line cut off.
+    """
+
+    def sizeHint(self, option, index) -> QSize:  # noqa: N802
+        size = super().sizeHint(option, index)
+        return QSize(size.width(), size.height() + 6)
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -125,6 +140,10 @@ class MainWindow(QMainWindow):
         # Your mistakes are saved to the mistake database; ply -> mistakes.id.
         self.db = MistakeDB()
         self.mistake_ids: dict[int, int] = {}
+        # Pattern tags of every flagged move; ply -> tags. "Missed" tags give
+        # the answer away, so for your mistakes they stay hidden until solved
+        # or revealed (see _visible_tags).
+        self.tags: dict[int, list[Tag]] = {}
 
         self._build_actions()
         self._build_layout()
@@ -202,6 +221,7 @@ class MainWindow(QMainWindow):
         self.filter_box.currentIndexChanged.connect(lambda _i: self._update_next_button())
 
         self.mistakes = QListWidget()
+        self.mistakes.setItemDelegate(RoomyRows(self.mistakes))
         self.mistakes.setToolTip("n / N: next / previous mistake")
         self.mistakes.currentItemChanged.connect(self._mistake_selected)
         self.mistakes.itemDoubleClicked.connect(lambda _item: self.start_retry())
@@ -343,6 +363,7 @@ class MainWindow(QMainWindow):
         self.solved = set()
         self.revealed = set()
         self.mistake_ids = {}
+        self.tags = {}
         self.cancel_analysis()
         self.game = game
         self.analysis = None
@@ -412,6 +433,7 @@ class MainWindow(QMainWindow):
     def _analysis_done(self, analysis: GameAnalysis) -> None:
         self.analysis = analysis
         self.judgements = judge_game(analysis)
+        self.tags = self._compute_tags(analysis)
         self.my_color = self._ask_my_color(analysis.headers)
         self.statusBar().showMessage(f"Analysis complete{self._save_mistakes()}", 6000)
         if self.my_color is not None:
@@ -421,6 +443,27 @@ class MainWindow(QMainWindow):
         self._populate_move_table()
         self._populate_mistakes()
         self.go_to(self.current_ply)
+
+    def _compute_tags(self, analysis: GameAnalysis) -> dict[int, list[Tag]]:
+        base_seconds, _ = parse_time_control(analysis.headers.get("TimeControl"))
+        return {
+            j.move.ply: tag_mistake(j.move, refutation_line(analysis, j.move.ply), base_seconds)
+            for j in self.judgements
+            if j.judgement.is_error
+        }
+
+    def _visible_tags(self, j: MoveJudgement) -> list[Tag]:
+        """Tags that don't give the answer away: for your unsolved mistakes, no "missed" tags."""
+        ply = j.move.ply
+        tags = self.tags.get(ply, [])
+        if self._is_my_error(j) and ply not in self.solved and ply not in self.revealed:
+            return [t for t in tags if not t.spoiler]
+        return tags
+
+    def _missed_text(self, ply: int | None) -> str:
+        """The "missed" tags as a line of feedback, once the answer may be shown."""
+        missed = [t.label for t in self.tags.get(ply, []) if t.spoiler]
+        return f"<br>Pattern: <b>{', '.join(missed)}</b>." if missed else ""
 
     def _save_mistakes(self) -> str:
         """Store your mistakes in the mistake database; returns a note for the status bar."""
@@ -514,6 +557,9 @@ class MainWindow(QMainWindow):
             text = f"{mark}{m.label}{j.judgement.symbol}  {j.judgement.value} (−{j.win_loss:.0f}%)"
             if m.ply in self.revealed:
                 text += f" · best {m.best_move_san}"
+            tags = self._visible_tags(j)
+            if tags:
+                text += "\n      " + " · ".join(t.label for t in tags)
             item = QListWidgetItem(text)
             item.setForeground(QBrush(style.judgement_color(j.judgement)))
             item.setData(Qt.ItemDataRole.UserRole, m.ply)
@@ -595,6 +641,9 @@ class MainWindow(QMainWindow):
                 text += f"<br>Best was <b>{m.best_move_san}</b> (green arrow)"
                 if m.best_line_san:
                     text += f": <i>{' '.join(m.best_line_san)}</i>"
+            tags = self._visible_tags(j)
+            if tags:
+                text += "<br>Tags: " + ", ".join(t.label for t in tags)
         self.details.setText(text)
 
     # --- retry mode -----------------------------------------------------
@@ -710,6 +759,7 @@ class MainWindow(QMainWindow):
             self.solved.add(self.retry_ply)
             self._populate_mistakes()
             text = f"<span style='color:#2e8b37'><b>✓ {result.feedback()}</b></span>"
+            text += self._missed_text(self.retry_ply)
             if result.judgement is not Judgement.BEST and self.retry_ply not in self.revealed:
                 text += "<br>The engine liked another move a little more. <b>Undo move</b> to look for it."
             remaining = self._unsolved_plies()
@@ -761,6 +811,7 @@ class MainWindow(QMainWindow):
         text = f"The correct move was <b>{m.best_move_san}</b> (green arrow)."
         if m.best_line_san:
             text += f"<br>Engine line: <i>{' '.join(m.best_line_san)}</i>"
+        text += self._missed_text(m.ply)
         return text
 
     def _retry_undo(self) -> None:

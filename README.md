@@ -79,7 +79,10 @@ background. You then get:
 - the move list colored by inaccuracy / mistake / blunder,
 - **Your mistakes**: your errors only. Select one to see the position and the
   engine's best move. If your Chess.com username doesn't match either player,
-  the app asks which side you played.
+  the app asks which side you played. Each one shows its
+  [pattern tags](#pattern-tags), such as *Hung a piece · Time trouble*; a
+  "missed" tag (*Missed fork*) only appears once you solve or reveal the puzzle,
+  since it would give the answer away.
 
 ### Retry your mistakes
 
