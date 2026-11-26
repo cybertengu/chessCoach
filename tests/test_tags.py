@@ -128,3 +128,97 @@ def test_allowed_mate_for_each_color():
     # Already getting mated: not something this move allowed.
     lost = _move(chess.STARTING_FEN, "f3", before=Evaluation(-100_000, -5), after=Evaluation(-100_000, -2))
     assert Tag.ALLOWED_MATE not in tag_mistake(lost, None, None)
+
+
+# --- motifs ------------------------------------------------------------------
+
+def _tags(fen, san, refutation=None, **kwargs):
+    return set(tag_mistake(_move(fen, san, move_number=30, before=Evaluation(0), **kwargs), refutation, None))
+
+
+def test_hung_piece_when_the_reply_takes_material():
+    fen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 2"
+    assert _tags(fen, "Ba6", ["bxa6", "d4"]) == {Tag.HUNG_PIECE}
+    # The opponent's best reply is quiet: whatever went wrong, no piece hung.
+    assert Tag.HUNG_PIECE not in _tags(fen, "Ba6", ["Nf6", "Bxb7"])
+    # Unknown reply: nothing to go on.
+    assert Tag.HUNG_PIECE not in _tags(fen, "Ba6", None)
+
+
+def test_an_even_trade_is_not_a_hung_piece():
+    fen = "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2"
+    assert Tag.HUNG_PIECE not in _tags(fen, "exd5", ["Qxd5", "Nc3"])
+
+
+def test_missed_capture():
+    fen = "rnb1kbnr/pppp1ppp/8/4p1q1/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
+    assert _tags(fen, "Nc3", best="Nxg5", best_line=["Nxg5", "d6"]) == {Tag.MISSED_CAPTURE}
+    # Capturing something worthless is not "missed capture".
+    fen = "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1"
+    assert _tags(fen, "Kd2", best="exd5", best_line=["exd5", "Kd7"]) == set()
+
+
+def test_missed_fork():
+    fen = "r3k3/8/8/1N6/8/8/8/4K3 w - - 0 1"
+    assert _tags(fen, "Kd2", best="Nc7+", best_line=["Nc7+", "Kd7", "Nxa8"]) == {Tag.MISSED_FORK}
+    # A fork that wins nothing within the line is not tagged.
+    assert _tags(fen, "Kd2", best="Nc7+", best_line=["Nc7+", "Kd7"]) == set()
+
+
+def test_missed_pin():
+    fen = "4k3/p2n4/8/8/8/8/8/3RKB2 w - - 0 1"
+    tags = _tags(fen, "Kd2", best="Bb5", best_line=["Bb5", "a6", "Rxd7"])
+    assert tags == {Tag.MISSED_PIN}
+
+
+def test_missed_skewer():
+    fen = "R7/8/4k3/8/8/8/4q3/7K w - - 0 1"
+    tags = _tags(fen, "Kg1", best="Re8+", best_line=["Re8+", "Kd5", "Rxe2"])
+    assert tags == {Tag.MISSED_SKEWER}
+
+
+def _tactics(move, refutation=None):
+    """Tags minus context ones (a mate score before the move is always "already winning")."""
+    return {t for t in tag_mistake(move, refutation, None) if t.group is not TagGroup.CONTEXT}
+
+
+def test_missed_back_rank_mate():
+    fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1"
+    move = _move(fen, "h3", best="Ra8#", before=Evaluation(100_000, 1), after=Evaluation(0))
+    assert _tactics(move) == {Tag.MISSED_MATE, Tag.MISSED_BACK_RANK}
+
+
+def test_allowed_back_rank_mate():
+    # Black threatens Rd1#; Ra7 does nothing about it.
+    fen = "3r2k1/5ppp/8/R7/8/8/5PPP/6K1 w - - 0 1"
+    move = _move(fen, "Ra7", before=Evaluation(0), after=Evaluation(-100_000, -1))
+    assert _tactics(move, ["Rd1#"]) == {Tag.ALLOWED_MATE, Tag.ALLOWED_BACK_RANK}
+
+
+def test_a_mate_with_open_escape_squares_is_not_back_rank():
+    # The king is not hemmed in by its own pieces: White's king covers the escape squares.
+    fen = "6k1/8/6K1/8/8/8/8/R7 w - - 0 1"
+    move = _move(fen, "Kf6", best="Ra8#", before=Evaluation(100_000, 1), after=Evaluation(0))
+    assert _tactics(move) == {Tag.MISSED_MATE}
+
+
+def test_bad_lines_are_ignored():
+    fen = "4k3/8/8/8/8/8/8/4K3 w - - 0 1"
+    assert _tags(fen, "Kd2", ["Zz9"], best="Ke2", best_line=["Ke2", "Qx??"]) == set()
+
+
+def test_a_pin_that_only_trades_is_a_plain_capture():
+    # From the sample game: 15... Qxf4 wins a loose bishop. It also pins the
+    # white queen, but the pin itself wins nothing (the queens come off).
+    fen = "r3k2r/ppb2pp1/4pnp1/4q3/5B2/2N5/PPPQ1PPP/2KR3R b kq - 1 15"
+    line = ["Qxf4", "Kb1", "Qxd2", "Rxd2", "Bd8", "Rd4", "Bb6", "Rd2"]
+    move = _move(fen, "Qc5", best="Qxf4", best_line=line, before=Evaluation(-679), after=Evaluation(17))
+    assert _tactics(move, ["Bxc7", "Qxc7"]) == {Tag.MISSED_CAPTURE}
+
+
+def test_hung_piece_only_counts_the_exchange_not_later_events():
+    # From the sample game: 36. Rc5 trades rooks; Black then queens a pawn.
+    fen = "8/5pp1/4pk2/p3r3/P1RKP1Pp/8/2P5/8 w - - 0 36"
+    reply = ["Rxc5", "Kxc5", "h3", "Kd6", "h2", "c4", "h1=Q", "g5+"]
+    move = _move(fen, "Rc5", before=Evaluation(-425), after=Evaluation(-890))
+    assert Tag.HUNG_PIECE not in _tactics(move, reply)
