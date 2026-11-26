@@ -47,6 +47,7 @@ from .dialogs import ChessComDialog, HelpDialog, PastePGNDialog, SideDialog, sav
 from .evalgraph import EvalGraph
 from .interactive import InteractiveBoard
 from .keymap import Command, KeyParser, Mode, parse_command_line
+from .report_dialog import ReportDialog
 from .retry_panel import RetryPanel
 from .tasks import TaskThread
 from . import style
@@ -144,6 +145,9 @@ class MainWindow(QMainWindow):
         # the answer away, so for your mistakes they stay hidden until solved
         # or revealed (see _visible_tags).
         self.tags: dict[int, list[Tag]] = {}
+        # Opened from the report: (ply to retry, your color) once the analysis is done.
+        self._pending_retry: tuple[int, chess.Color] | None = None
+        self._report: ReportDialog | None = None
 
         self._build_actions()
         self._build_layout()
@@ -173,6 +177,7 @@ class MainWindow(QMainWindow):
         action("Open PGN…", self.open_file, "Ctrl+O or :e", QKeySequence.StandardKey.Open)
         action("Paste PGN…", self.paste_pgn, "Ctrl+Shift+V or :paste", QKeySequence("Ctrl+Shift+V"))
         action("Chess.com…", self.import_chesscom, "Ctrl+I or :cc", QKeySequence("Ctrl+I"))
+        action("My mistakes…", self.show_report, "Ctrl+R or :report", QKeySequence("Ctrl+R"))
         toolbar.addSeparator()
         action("Flip board", self.flip_board, "f")
         self.retry_action = action("Try a better move", lambda: self.start_retry(), "t or Enter")
@@ -358,7 +363,41 @@ class MainWindow(QMainWindow):
             except PGNError as exc:
                 QMessageBox.warning(self, "Could not read PGN", str(exc))
 
+    def show_report(self) -> None:
+        if self._report is None:
+            self._report = ReportDialog(self.db, self)
+            self._report.open_mistake.connect(self.open_mistake)
+        self._report.refresh()
+        self._report.show()
+        self._report.raise_()
+        self._report.activateWindow()
+
+    def open_mistake(self, mistake_id: int) -> None:
+        """Open a stored mistake's game and start its puzzle once the analysis is in."""
+        try:
+            row = self.db.mistake_game(mistake_id)
+        except DatabaseError as exc:
+            QMessageBox.warning(self, "Could not open the mistake", str(exc))
+            return
+        if row is None or not row["pgn"]:
+            QMessageBox.information(
+                self, "Game not stored", "This game was saved before chessCoach kept the games "
+                "themselves. Open it again (or run chesscoach-cli batch) to store it."
+            )
+            return
+        try:
+            game = read_game(row["pgn"])
+        except PGNError as exc:
+            QMessageBox.warning(self, "Could not read game", str(exc))
+            return
+        self.load_game(game, row["link"] or "mistake database")
+        color = chess.WHITE if row["my_color"] == "white" else chess.BLACK
+        self._pending_retry = (row["ply"], color)
+        self.raise_()
+        self.activateWindow()
+
     def load_game(self, game: chess.pgn.Game, source: str) -> None:
+        self._pending_retry = None
         self.exit_retry(navigate=False)
         self.solved = set()
         self.revealed = set()
@@ -434,7 +473,8 @@ class MainWindow(QMainWindow):
         self.analysis = analysis
         self.judgements = judge_game(analysis)
         self.tags = self._compute_tags(analysis)
-        self.my_color = self._ask_my_color(analysis.headers)
+        pending, self._pending_retry = self._pending_retry, None
+        self.my_color = pending[1] if pending else self._ask_my_color(analysis.headers)
         self.statusBar().showMessage(f"Analysis complete{self._save_mistakes()}", 6000)
         if self.my_color is not None:
             self.board.set_flipped(self.my_color == chess.BLACK)
@@ -443,6 +483,8 @@ class MainWindow(QMainWindow):
         self._populate_move_table()
         self._populate_mistakes()
         self.go_to(self.current_ply)
+        if pending:
+            self.start_retry(pending[0])
 
     def _compute_tags(self, analysis: GameAnalysis) -> dict[int, list[Tag]]:
         base_seconds, _ = parse_time_control(analysis.headers.get("TimeControl"))
@@ -1003,6 +1045,7 @@ class MainWindow(QMainWindow):
                 "quit": self.close,
                 "help": self.show_help,
                 "flip": self.flip_board,
+                "report": self.show_report,
             }[result.command]()
 
     def closeEvent(self, event) -> None:  # noqa: N802

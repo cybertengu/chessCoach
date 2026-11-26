@@ -84,6 +84,9 @@ endgame, including the many mistakes that match no pattern), by time control
 move is never shown, and a "missed" tag only lists positions you have
 already solved or revealed in a retry.
 
+In the app, **My mistakes…** (Ctrl+R or `:report`) shows the same report;
+click **Retry** next to an example to open that game straight into the puzzle.
+
 ## Desktop app
 
 Add chessCoach to your Fedora app menu (this also sets up `.venv` if needed):
