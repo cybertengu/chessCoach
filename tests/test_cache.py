@@ -78,3 +78,13 @@ def test_no_cache_means_nothing_is_stored(tmp_path, monkeypatch):
     monkeypatch.setenv("CHESSCOACH_CACHE_DIR", str(tmp_path))
     analyze_with_cache(_game(), cache=None, nodes=10_000, engine_count=1)
     assert not list(tmp_path.iterdir())
+
+
+def test_open_engines_can_be_reused(engines, monkeypatch, tmp_path):
+    def no_engines(*args, **kwargs):
+        raise AssertionError("engines passed in should be used")
+
+    monkeypatch.setattr(cache_mod, "open_engines", no_engines)
+    cache = AnalysisCache(tmp_path)
+    result = analyze_with_cache(_game(), cache=cache, nodes=20_000, engines=engines)
+    assert len(result.moves) == 5
