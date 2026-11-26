@@ -9,10 +9,10 @@ Goal: find the mistakes that keep repeating across my games, then practice them 
 - [x] **2. Mistake database**
   - Store every flagged position (FEN, move played, best move, win % lost, game link, date, time control, clock left) in a local SQLite file.
   - Record retry outcomes too (solved / revealed / attempts).
-- [ ] **3. Pattern tags**
+- [x] **3. Pattern tags**
   - Rule-based tags with python-chess: hung piece, missed capture, missed fork/pin/skewer, back-rank, missed mate, allowed mate.
   - Context tags: opening (move ≤ 12), time trouble (clock < 10% of the start time), already winning/losing.
-  - Optional: a local LLM (Ollama) writes a short explanation from the engine facts, never judging moves itself.
+  - Optional, not done yet: a local LLM (Ollama) writes a short explanation from the engine facts, never judging moves itself.
 - [ ] **4. Batch analysis + "my top mistakes" report**
   - Analyze my last N Chess.com games (UsagiTengu) in one go.
   - Show counts by tag, phase and time control, trend over time, and links to example positions.
