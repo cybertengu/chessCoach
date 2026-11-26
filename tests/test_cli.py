@@ -159,3 +159,27 @@ def test_deck_shows_todays_puzzles_without_positions(capsys):
         assert text in out, text
     assert len(out.split("Coming up")[1].split("Last 30")[0].strip().splitlines()) == 2
     assert "e4" not in out and "a3" not in out  # no moves at all
+
+
+def test_report_ends_with_the_practice_deck(capsys):
+    import datetime as dt
+
+    from test_deck import FENS, _failed, _game, _mistake
+
+    from chesscoach.deck import Deck
+    from chesscoach.tags import TAGGER_VERSION
+
+    db = MistakeDB()
+    with db.connect() as conn:
+        g = _game(conn, "2026-11-01")
+        fork = _mistake(conn, g, 3, fen=FENS[1], tags=["missed_fork", "hung_piece"])
+        # Tagged by the current rules, so the report keeps these tags.
+        conn.execute("UPDATE mistakes SET tags_version = ?", (TAGGER_VERSION,))
+    for day in range(3):
+        Deck(db).record(fork, _failed(), dt.date.today() - dt.timedelta(days=day + 1))
+    assert cli.main(["report"]) == 0
+    out = capsys.readouterr().out.split("Practice deck:")[1]
+    for text in ("1 card, 0 more waiting", "Hung a piece", "Missed fork", "0%",
+                 "Trouble cards (missed 3+ times)", "vs Opponent  2. a3  missed 3x  [Hung a piece]"):
+        assert text in out, text
+    assert "e4" not in out

@@ -33,7 +33,7 @@ import chess
 from .analysis import MoveAnalysis
 from .classify import Judgement
 from .db import _TAG_VALUES, MistakeDB, mistake_from_row
-from .tags import Tag, sort_tags
+from .tags import Tag, TagGroup, sort_tags
 
 # Box -> days until the card is due again. Box 0 is a new card.
 INTERVALS: dict[int, int] = {1: 1, 2: 3, 3: 7, 4: 14, 5: 30, 6: 60, 7: 120}
@@ -43,6 +43,10 @@ NEW_BOX = 0
 FIRST_PASS_BOX = 2
 # How many cards are introduced to the deck per day.
 NEW_PER_DAY = 10
+# A card missed this many times is a "trouble card" in the report.
+TROUBLE_LAPSES = 3
+# How many trouble cards the report lists.
+TROUBLE_SHOWN = 10
 
 
 class Grade(Enum):
@@ -167,6 +171,31 @@ class DeckSummary:
         return self.due + self.new_today
 
 
+@dataclass(frozen=True)
+class PatternPractice:
+    """How reviews of the cards with one pattern tag went."""
+
+    tag: Tag
+    cards: int  # cards in the deck with this tag
+    reviews: int
+    passed: int  # found a good move on the first try
+
+    @property
+    def pass_rate(self) -> float:
+        return 100.0 * self.passed / self.reviews if self.reviews else 0.0
+
+
+@dataclass(frozen=True)
+class DeckReport:
+    summary: DeckSummary
+    patterns: list[PatternPractice]  # most reviewed first
+    trouble: list[Card]  # missed TROUBLE_LAPSES times or more, most missed first
+
+    @property
+    def empty(self) -> bool:
+        return not self.summary.in_deck and not self.summary.new_waiting
+
+
 # Mistakes that may become cards (``m`` is the mistakes row).
 _ELIGIBLE = f"""
     m.judgement IN ('{Judgement.MISTAKE.value}', '{Judgement.BLUNDER.value}')
@@ -285,6 +314,41 @@ class Deck:
             for day in (today + dt.timedelta(days=n) for n in range(1, days_ahead + 1))
         ]
         return DeckSummary(due, new_today, waiting, boxes, upcoming, recent)
+
+
+    def report(self, today: dt.date) -> DeckReport:
+        """The deck section of the report: its state, results by pattern, trouble cards."""
+        summary = self.summary(today)
+        patterns = [t.value for t in Tag if t.group is not TagGroup.CONTEXT]
+        marks = ", ".join("?" * len(patterns))
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT t.tag,
+                       COUNT(DISTINCT d.mistake_id) AS cards,
+                       COUNT(r.id) AS reviews,
+                       COUNT(r.id) FILTER (WHERE r.grade = '{Grade.PASS.value}') AS passed
+                FROM deck d
+                JOIN mistake_tags t ON t.mistake_id = d.mistake_id
+                LEFT JOIN reviews r ON r.mistake_id = d.mistake_id
+                WHERE t.tag IN ({marks})
+                GROUP BY t.tag
+                """,
+                patterns,
+            ).fetchall()
+            trouble_ids = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT mistake_id FROM deck WHERE lapses >= ? ORDER BY lapses DESC, due",
+                    (TROUBLE_LAPSES,),
+                )
+            ]
+            trouble = _load_cards(conn, trouble_ids)
+        practice = [
+            PatternPractice(Tag(r["tag"]), r["cards"], r["reviews"], r["passed"]) for r in rows
+        ]
+        practice.sort(key=lambda p: (-p.reviews, -p.cards, list(Tag).index(p.tag)))
+        return DeckReport(summary, practice, trouble)
 
 
 def _new_left(conn: sqlite3.Connection, today: dt.date, new_per_day: int) -> int:

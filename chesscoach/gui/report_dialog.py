@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import html
 
 from PySide6.QtCore import QUrl, Signal
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from ..classify import Judgement
 from ..db import DatabaseError, MistakeDB
+from ..deck import INTERVALS, TROUBLE_LAPSES, TROUBLE_SHOWN, Deck, DeckReport, Grade
 from ..report import Filters, Period, Report, ReportMistake, TimeClass, build_report
 from . import style
 
@@ -71,7 +73,7 @@ def _example(m: ReportMistake) -> str:
     return f"<li>{text}</li>"
 
 
-def report_html(report: Report) -> str:
+def report_html(report: Report, deck: DeckReport | None = None) -> str:
     """The report as HTML. Never contains a best move; missed tags only for seen answers."""
     if not report.games:
         if report.filters != Filters():
@@ -135,6 +137,9 @@ def report_html(report: Report) -> str:
         headers = ["Period", "Games", "Mistakes / game", "Blunders / game", "Top patterns"]
         parts.append(_table(headers, rows, text_columns=(0, 4)))
 
+    if deck is not None:
+        parts.append(deck_html(deck))
+
     parts.append("<h3>Examples</h3><p><small>Biggest drop in win % first. "
                  "Retry opens the position as a puzzle; the best move stays hidden.</small></p>")
     for r in report.tags:
@@ -151,6 +156,60 @@ def report_html(report: Report) -> str:
                 f"<h4>No pattern found: {_e(r.phase.label.lower())}</h4>"
                 f"<ul>{''.join(_example(m) for m in r.no_pattern_examples)}</ul>"
             )
+    return "".join(parts)
+
+
+def deck_html(deck: DeckReport) -> str:
+    """The practice deck section: never a best move, never a card's "missed" tags."""
+    if deck.empty:
+        return ""
+    s = deck.summary
+    parts = [
+        "<h3>Practice deck</h3>",
+        f"<p>{_plural(s.in_deck, 'card')} in the deck, {s.new_waiting} more waiting. "
+        f"Today: <b>{s.due} due + {s.new_today} new</b>."
+        + (" Practice them with Ctrl+P." if s.session_size else ""),
+    ]
+    total = sum(s.recent.values())
+    if total:
+        passed = s.recent.get(Grade.PASS, 0)
+        parts.append(
+            f"<br>Last 30 days: {_plural(total, 'review')}, {100 * passed / total:.0f}% "
+            f"passed first try ({passed} pass, {s.recent.get(Grade.HARD, 0)} hard, "
+            f"{s.recent.get(Grade.FAIL, 0)} missed)."
+        )
+    parts.append("</p>")
+    rows = [
+        [f"Box {box}", f"{days} day{'s' if days != 1 else ''}", str(s.boxes[box])] for box, days in INTERVALS.items()
+    ]
+    parts.append(_table(["Box", "Next review after", "Cards"], rows))
+    practiced = [p for p in deck.patterns if p.reviews]
+    if practiced:
+        rows = [
+            [_e(p.tag.label), str(p.cards), str(p.reviews), f"{p.pass_rate:.0f}%"]
+            for p in practiced
+        ]
+        parts.append("<h4>Practice by pattern</h4>")
+        parts.append(_table(["Pattern", "Cards", "Reviews", "First try"], rows))
+    if deck.trouble:
+        parts.append(f"<h4>Trouble cards</h4><p><small>Missed {TROUBLE_LAPSES} times or more."
+                     "</small></p><ul>")
+        for card in deck.trouble[:TROUBLE_SHOWN]:
+            m = card.mistake
+            label = f"{m.move_number}{'.' if card.color else '...'} {m.san}"
+            text = (
+                f"{_e(card.game_date or '?')} · vs {_e(card.opponent)} · <b>{_e(label)}</b> · "
+                f"{_judgement(card.judgement.value)} · missed {card.lapses}×"
+            )
+            tags = [t.label for t in card.tags if not t.spoiler]
+            if tags:
+                text += f" · <i>{_e(', '.join(tags))}</i>"
+            if card.has_pgn:
+                text += f" · <a href='{MISTAKE_SCHEME}:{card.mistake_id}'>Retry</a>"
+            parts.append(f"<li>{text}</li>")
+        if len(deck.trouble) > TROUBLE_SHOWN:
+            parts.append(f"<li><i>… and {len(deck.trouble) - TROUBLE_SHOWN} more</i></li>")
+        parts.append("</ul>")
     return "".join(parts)
 
 
@@ -215,8 +274,12 @@ class ReportDialog(QDialog):
         except DatabaseError as exc:
             self.browser.setHtml(f"<p>Could not read your mistake database: {_e(exc)}</p>")
             return
+        try:
+            deck = Deck(self.db).report(dt.date.today())
+        except DatabaseError:
+            deck = None
         scroll = self.browser.verticalScrollBar().value()
-        self.browser.setHtml(report_html(report))
+        self.browser.setHtml(report_html(report, deck))
         self.browser.verticalScrollBar().setValue(scroll)
 
     def _link_clicked(self, url: QUrl) -> None:

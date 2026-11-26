@@ -278,3 +278,21 @@ def test_card_knows_your_opponent_and_game(db):
     assert card.color is False and card.opponent == "Rival"
     assert card.mistake.best_move_uci == "e7e5" and card.judgement.value == "blunder"
     assert not card.has_pgn and card.game_date == "2026-11-01"
+
+
+def test_report_by_pattern_and_trouble_cards(db):
+    with db.connect() as conn:
+        g = _game(conn, "2026-11-01")
+        hung = _mistake(conn, g, 1, fen=FENS[0], tags=["hung_piece", "opening"])
+        fork = _mistake(conn, g, 3, fen=FENS[1], tags=["missed_fork", "hung_piece"])
+        _mistake(conn, g, 5, fen=FENS[2], tags=["missed_pin"])  # not in the deck yet
+    deck = Deck(db)
+    deck.record(hung, _passed(), TODAY)
+    for day in range(3):
+        deck.record(fork, _failed(), days(day))
+    report = deck.report(days(3))
+    rows = {p.tag: (p.cards, p.reviews, p.passed) for p in report.patterns}
+    assert rows == {Tag.HUNG_PIECE: (2, 4, 1), Tag.MISSED_FORK: (1, 3, 0)}  # no context tags
+    assert report.patterns[0].tag is Tag.HUNG_PIECE and report.patterns[0].pass_rate == 25.0
+    assert [c.mistake_id for c in report.trouble] == [fork]
+    assert report.summary.in_deck == 2 and not report.empty
