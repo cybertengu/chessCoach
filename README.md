@@ -5,6 +5,8 @@ chessCoach runs your games through Stockfish, flags your inaccuracies, mistakes
 and blunders, and lets you replay each one from that position until you find a
 better move.
 
+![chessCoach retrying a blunder: the board is rewound to the position before 13. Ne5??, the move played in the game stays marked in red, and the panel confirms that Bxf6 is a good move](docs/screenshot.png)
+
 ## Setup (Fedora)
 
 ```bash
