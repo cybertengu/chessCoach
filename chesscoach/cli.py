@@ -10,6 +10,7 @@ import sys
 import chess
 
 from .analysis import DEFAULT_NODES, GameAnalysis, MoveAnalysis, reply_line
+from .batch import GameOutcome, GameStatus, analyze_games
 from .cache import AnalysisCache, analyze_with_cache
 from .chesscom import ChessComError, recent_games
 from .classify import judge_game, player_color, side_accuracy
@@ -120,6 +121,69 @@ def _cmd_tag(args: argparse.Namespace) -> int:
     return 0
 
 
+def _describe_outcome(outcome: GameOutcome, username: str) -> str:
+    game = outcome.game.describe(username)
+    if outcome.status is GameStatus.SKIPPED:
+        return f"{game}: already saved"
+    if outcome.status is GameStatus.FAILED:
+        return f"{game}: FAILED: {outcome.error}"
+    return f"{game}: {_plural(outcome.mistakes, 'mistake')} ({outcome.added} new)"
+
+
+def _cmd_batch(args: argparse.Namespace) -> int:
+    print(f"Fetching the last {args.count} games of {args.username}...", file=sys.stderr)
+    games = recent_games(args.username, count=args.count)
+    if not games:
+        print("No games found.")
+        return 0
+    width = len(str(len(games)))
+    live = sys.stderr.isatty()  # a progress line that rewrites itself
+
+    def on_start(index: int, total: int, game) -> None:
+        if live:
+            print(f"[{index:>{width}}/{total}] {game.describe(args.username)}...",
+                  end="", file=sys.stderr, flush=True)
+
+    def on_progress(done: int, total: int) -> None:
+        if live:
+            print(f"\r\033[K  position {done}/{total}", end="", file=sys.stderr, flush=True)
+
+    def on_done(index: int, total: int, outcome: GameOutcome) -> None:
+        if live:
+            print("\r\033[K", end="", file=sys.stderr, flush=True)
+        print(f"[{index:>{width}}/{total}] {_describe_outcome(outcome, args.username)}", flush=True)
+
+    result = analyze_games(
+        games,
+        args.username,
+        nodes=args.nodes,
+        engine_count=args.engines,
+        engine_path=args.engine,
+        redo=args.redo,
+        on_start=on_start,
+        on_progress=on_progress,
+        on_done=on_done,
+    )
+    if live and result.stopped:
+        print("\r\033[K", end="", file=sys.stderr, flush=True)
+    saved = result.count(GameStatus.SAVED)
+    skipped = result.count(GameStatus.SKIPPED)
+    print()
+    print(
+        f"Analyzed {_plural(saved, 'game')} ({_plural(result.added, 'new mistake')}), "
+        f"{skipped} already saved, {len(result.failed)} failed."
+    )
+    if result.failed:
+        print("Failed:")
+        for outcome in result.failed:
+            print(f"  {outcome.game.url}  {outcome.error}")
+    if result.stopped:
+        done = len(result.outcomes)
+        print(f"Stopped after {done} of {len(games)} games; run the same command to continue.")
+        return 130
+    return 1 if result.failed else 0
+
+
 def _cmd_recent(args: argparse.Namespace) -> int:
     games = recent_games(args.username, count=args.count)
     if not games:
@@ -188,6 +252,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tag.set_defaults(func=_cmd_tag)
 
+    batch = sub.add_parser(
+        "batch",
+        help="Analyze your recent Chess.com games and save your mistakes",
+        description=(
+            "Analyze your last games from Chess.com one after another and save your "
+            "mistakes (with pattern tags) to the mistake database. Games already saved "
+            "are skipped, so you can stop with Ctrl-C and run it again to continue."
+        ),
+    )
+    batch.add_argument("username", help="Your Chess.com username")
+    batch.add_argument("--count", type=int, default=50, help="How many games (default 50)")
+    batch.add_argument(
+        "--nodes",
+        type=int,
+        default=DEFAULT_NODES,
+        help=f"Nodes searched per position (default {DEFAULT_NODES:,})",
+    )
+    batch.add_argument("--engine", help="Path to the Stockfish binary")
+    batch.add_argument(
+        "--engines",
+        type=int,
+        help="Number of Stockfish processes to run in parallel (default: one per CPU core)",
+    )
+    batch.add_argument(
+        "--redo", action="store_true", help="Analyze and save games again even if already saved"
+    )
+    batch.set_defaults(func=_cmd_batch)
+
     recent = sub.add_parser("recent", help="List your recent Chess.com games")
     recent.add_argument("username", help="Chess.com username")
     recent.add_argument("--count", type=int, default=10, help="How many games to list")
@@ -203,6 +295,9 @@ def main(argv: list[str] | None = None) -> int:
     except (PGNError, EngineNotFoundError, ChessComError, DatabaseError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("\nStopped.", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

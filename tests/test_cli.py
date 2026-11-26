@@ -74,3 +74,21 @@ def test_tag_searches_missing_replies(capsys):
     _forget_tags_and_replies(db)
     assert cli.main(["tag"]) == 0
     assert "Hung a piece" in capsys.readouterr().out
+
+
+@requires_stockfish
+def test_batch_analyzes_recent_games_and_reports_failures(capsys, monkeypatch):
+    from test_batch import _game
+
+    games = [_game(1), _game(2, moves="1. e4 e5 2. Ke3 Zz9")]
+    monkeypatch.setattr(cli, "recent_games", lambda username, count: games[:count])
+    args = ["batch", "Me", "--nodes", "5000", "--engines", "1"]
+    assert cli.main(args) == 1  # one game failed
+    out = capsys.readouterr().out
+    assert "[1/2]" in out and "new)" in out
+    assert "[2/2]" in out and "FAILED" in out
+    assert "Analyzed 1 game" in out and "1 failed" in out
+    assert _mistake_count() > 0
+
+    assert cli.main([*args, "--count", "1"]) == 0
+    assert "already saved" in capsys.readouterr().out

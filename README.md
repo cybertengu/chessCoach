@@ -57,6 +57,19 @@ the mistake database (see below); `--no-save` skips that.
 
 This uses Chess.com's public API, so no login is needed. Chess variants are skipped.
 
+### Analyze many games at once
+
+```bash
+.venv/bin/chesscoach-cli batch UsagiTengu              # your last 50 games
+.venv/bin/chesscoach-cli batch UsagiTengu --count 200
+```
+
+Each game is analyzed (about 10 s each, instant if it is in the analysis
+cache) and your mistakes are saved to the [mistake database](#mistake-database)
+with their pattern tags. Games already saved are skipped, so you can stop with
+Ctrl-C and run the same command again to continue. A game that fails is listed
+at the end and the rest still run; `--redo` saves every game again.
+
 ## Desktop app
 
 Add chessCoach to your Fedora app menu (this also sets up `.venv` if needed):
