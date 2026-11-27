@@ -146,7 +146,9 @@ def test_reopening_a_game_adds_nothing():
     db.record_attempt(first.mistake_ids[5], _attempt())
     again = _record(db)
     assert again.added == 0
-    assert again == db_mod.RecordedGame(first.game_id, first.mistake_ids, 0, first.tags)
+    assert again == db_mod.RecordedGame(
+        first.game_id, first.mistake_ids, 0, first.tags, solved=frozenset({5})
+    )
     with db.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM mistakes").fetchone()[0] == 2
@@ -191,6 +193,17 @@ def test_retry_outcomes_are_summed_per_mistake():
         "attempt", "Qe2", "inaccuracy", 0,
     )
     assert first["created_at"].endswith("Z")
+
+
+def test_recording_again_reports_earlier_retry_outcomes():
+    db = MistakeDB()
+    ids = _record(db).mistake_ids
+    db.record_attempt(ids[5], _attempt("Bc4", "f1c4", Judgement.BEST))
+    db.record_reveal(ids[3])
+    db.record_attempt(ids[3], _attempt("Qxf7+", "h5f7", Judgement.BLUNDER))
+    again = _record(db)
+    assert again.solved == {5}
+    assert again.revealed == {3}
 
 
 def test_mistake_round_trips_for_retrying():

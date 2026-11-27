@@ -518,6 +518,9 @@ class MainWindow(QMainWindow):
         except DatabaseError as exc:
             return f" · could not save your mistakes: {exc}"
         self.mistake_ids = recorded.mistake_ids
+        # Puzzles solved or revealed in earlier sessions stay that way.
+        self.solved |= recorded.solved
+        self.revealed |= recorded.revealed
         if recorded.added:
             n = recorded.added
             return f" · saved {n} new mistake{'s' if n != 1 else ''} to your mistake database"

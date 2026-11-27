@@ -201,9 +201,11 @@ def test_mistakes_and_retries_are_saved_to_the_database(qapp, monkeypatch):
     wait_until(qapp, lambda: "✓" in window.retry_panel.feedback.text())
     window.close()
 
-    # Opening the same game again adds nothing.
+    # Opening the same game again adds nothing, and remembers the puzzle's outcome.
     window = open_and_analyze()
     assert "already" in window.statusBar().currentMessage()
+    assert 5 in window.solved and 5 in window.revealed
+    assert window.mistakes.item(0).text().startswith("✓")
     window.close()
 
     with MistakeDB().connect() as conn:
