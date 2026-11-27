@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -38,8 +39,8 @@ from . import style
 from .board import Arrow
 from .dialogs import HelpDialog
 from .interactive import InteractiveBoard
-from .keymap import KeyParser, Mode
-from .keys import key_token
+from .keymap import KeyParser, Mode, parse_command_line
+from .keys import CommandLine, key_token
 from .retry_panel import RetryPanel
 from .tasks import TaskThread
 
@@ -123,12 +124,22 @@ class PracticeWindow(QDialog):
         self.close_button.clicked.connect(self.close)
         self.close_button.hide()
 
+        # Vim-style ':' line: type a move (:Nc4 or :b1c3), or :help, :flip, :q.
+        self.command_line = CommandLine(self.close_command_line)
+        self.command_line.returnPressed.connect(self._run_command_line)
+        self.command_line.textEdited.connect(self._preview_typed_move)
+        self.command_line.hide()
+        self.message = QLabel()
+        self.message.setWordWrap(True)
+
         right = QVBoxLayout()
         right.addWidget(self.header)
         right.addWidget(self.retry_panel)
         right.addWidget(self.info)
         right.addStretch(1)
         right.addWidget(self.last_result)
+        right.addWidget(self.message)
+        right.addWidget(self.command_line)
         right.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignRight)
 
         layout = QHBoxLayout(self)
@@ -465,6 +476,8 @@ class PracticeWindow(QDialog):
             return False
         if QApplication.activeModalWidget() not in (None, self):
             return False
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            return False  # typing on the ':' line: letters are just letters
         if event.modifiers() & (
             Qt.KeyboardModifier.ControlModifier
             | Qt.KeyboardModifier.AltModifier
@@ -504,6 +517,52 @@ class PracticeWindow(QDialog):
             self.board.set_flipped(not self.board.flipped)
         elif name == "help":
             HelpDialog(self).exec()
+        elif name == "cmdline":
+            self.open_command_line()
+
+    # --- the ':' command line -----------------------------------------------
+
+    def open_command_line(self) -> None:
+        self.message.clear()
+        self.command_line.setText(":")
+        self.command_line.show()
+        self.command_line.setFocus()
+
+    def close_command_line(self) -> None:
+        self.board.set_preview_override(None)
+        self.command_line.hide()
+        self.command_line.clear()
+        self.board.setFocus()
+
+    def _preview_typed_move(self, text: str) -> None:
+        """Show the blue preview arrow for a move while it's being typed."""
+        if self.board.interactive_color is None:
+            return
+        self.board.set_preview_override(parse_command_line(text, self.board.board).move)
+
+    def _run_command_line(self) -> None:
+        text = self.command_line.text()
+        self.close_command_line()
+        playable = self.board.board if self.board.interactive_color is not None else None
+        result = parse_command_line(text, playable)
+        if result.error:
+            extra = ""
+            if playable is None:
+                extra = " (press u to undo your last try first)" if self.card else ""
+            self.message.setText(f"⚠ {result.error}{extra}")
+        elif result.move is not None:
+            self._attempt_made(result.move)
+        elif result.command == "quit":
+            self.finish()
+        elif result.command == "help":
+            HelpDialog(self).exec()
+        elif result.command == "flip":
+            self.board.set_flipped(not self.board.flipped)
+        elif result.command:
+            self.message.setText(
+                f"⚠ :{text.strip().lstrip(':').strip()} works in the main window. "
+                "Here: a move like :Nc4, or :flip, :help, :q."
+            )
 
     def done(self, result: int) -> None:  # noqa: D401 - QDialog.done: closing by any route
         if not self.finished:

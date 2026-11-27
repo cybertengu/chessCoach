@@ -47,7 +47,7 @@ from .dialogs import ChessComDialog, HelpDialog, PastePGNDialog, SideDialog, sav
 from .evalgraph import EvalGraph
 from .interactive import InteractiveBoard
 from .keymap import Command, KeyParser, Mode, parse_command_line
-from .keys import key_token
+from .keys import CommandLine, key_token
 from .practice_window import PracticeWindow
 from .report_dialog import ReportDialog
 from .retry_panel import RetryPanel
@@ -55,24 +55,6 @@ from .tasks import TaskThread
 from . import style
 
 SIDE_KEY = "player/last_side"
-
-class CommandLine(QLineEdit):
-    """Vim-style ':' line at the bottom of the window."""
-
-    def __init__(self, on_cancel, parent=None) -> None:
-        super().__init__(parent)
-        self._on_cancel = on_cancel
-        # Deleting the leading ':' closes the line, like vim.
-        self.textEdited.connect(lambda text: None if text.startswith(":") else on_cancel())
-
-    def keyPressEvent(self, event) -> None:  # noqa: N802
-        if event.key() == Qt.Key.Key_Escape:
-            self._on_cancel()
-            return
-        super().keyPressEvent(event)
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            # QLineEdit lets Enter bubble up to the window, where it means "retry".
-            event.accept()
 
 FILTERS = [
     ("Inaccuracies, mistakes and blunders", Judgement.INACCURACY),
