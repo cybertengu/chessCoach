@@ -455,3 +455,47 @@ def test_ctrl_p_opens_practice(qapp):
     assert window._practice is first
     window._practice.close()
     window.close()
+
+
+@requires_stockfish
+def test_practice_moves_can_be_typed_on_the_command_line(qapp, monkeypatch):
+    from PySide6.QtTest import QTest
+
+    from chesscoach.db import MistakeDB
+    from chesscoach.gui.practice_window import PracticeWindow
+
+    _stored_hung_queen(qapp, monkeypatch)
+    window = PracticeWindow(MistakeDB())
+    window.show()
+    window.start()
+    qapp.processEvents()
+
+    QTest.keyClicks(window.board, ":")
+    assert window.command_line.isVisible() and window.command_line.text() == ":"
+    # Letters go to the line, not to the puzzle keys (H would be a hint, s the answer).
+    QTest.keyClicks(window.command_line, "Hs")
+    assert not window.review.used_hint and not window.revealed_now
+    window.command_line.setText(":")
+
+    QTest.keyClicks(window.command_line, "Bc")
+    assert window.board.preview_move() is None  # not a full move yet
+    QTest.keyClicks(window.command_line, "4")
+    assert window.board.preview_move() == chess.Move.from_uci("f1c4")  # blue preview arrow
+    QTest.keyClick(window.command_line, QtCore.Qt.Key.Key_Return)
+    assert not window.command_line.isVisible()
+    wait_until(qapp, lambda: "✓" in window.retry_panel.feedback.text())
+    assert window.review.grade is not None and window.review.grade.value == "pass"
+
+    # While an attempt is shown, a typed move asks you to undo first.
+    window.command_line.setText(":Nf3")
+    window._run_command_line()
+    assert "undo" in window.message.text()
+
+    # App commands from the main window aren't available here; :q ends the session.
+    window.command_line.setText(":report")
+    window._run_command_line()
+    assert "works in the main window" in window.message.text()
+    window.command_line.setText(":q")
+    window._run_command_line()
+    assert window.finished and "1 pass" in window.header.text()
+    window.close()

@@ -102,7 +102,9 @@ sends it back to tomorrow.
 
 In the app, **Practice…** (Ctrl+P or `:practice`) goes through today's cards
 one puzzle at a time, set up straight from the position: the same keys and
-buttons as a retry, plus **Next card** (n). A card you missed comes back once
+buttons as a retry, plus **Next card** (n). Moves can be typed too: `:Nc4` or
+`:b1c3`, with a blue preview arrow while you type (`:flip`, `:help` and `:q`
+work as well). A card you missed comes back once
 more at the end of the session (not graded). "Missed" tags stay hidden until
 you solve or reveal the card in that review, and **Open the game** shows the
 whole game afterwards.

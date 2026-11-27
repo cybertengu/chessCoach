@@ -19,7 +19,7 @@ Goal: find the mistakes that keep repeating across my games, then practice them 
 - [x] **5. Practice deck (spaced repetition)**
   - Turn my own mistake positions into puzzles that come back on a schedule (Leitner boxes: 1, 3, 7, 14, 30, 60, 120 days).
   - Same spoiler-free retry flow; failed puzzles come back sooner.
-  - Optional, not done yet: typed moves (`:Nf3`) in the Practice window; a setting for the 10 new cards a day.
+  - Optional, not done yet: a setting for the 10 new cards a day.
 
 ## Visual polish
 
