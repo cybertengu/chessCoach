@@ -132,3 +132,30 @@ def test_report_updates_old_tags_first(capsys):
         _add_mistake(conn, _add_game(conn), 30, version=TAGGER_VERSION - 1)
     assert cli.main(["report"]) == 0
     assert "Updated the tags of 1 mistake" in capsys.readouterr().err
+
+
+def test_deck_shows_todays_puzzles_without_positions(capsys):
+    import datetime as dt
+
+    from test_deck import FENS, _failed, _game, _mistake, _passed
+
+    from chesscoach.deck import Deck
+
+    assert cli.main(["deck"]) == 0
+    assert "No puzzles yet" in capsys.readouterr().out
+
+    db = MistakeDB()
+    with db.connect() as conn:
+        g = _game(conn, "2026-11-01")
+        a, b, _ = (_mistake(conn, g, ply, fen=FENS[i]) for i, ply in enumerate((1, 3, 5)))
+    deck = Deck(db)
+    yesterday = dt.date.today() - dt.timedelta(days=1)
+    deck.record(a, _passed(), yesterday)
+    deck.record(b, _failed(), yesterday)
+    assert cli.main(["deck", "--days", "10"]) == 0
+    out = capsys.readouterr().out
+    for text in ("Today: 1 card due + 1 new = 2 puzzles", "In the deck: 2 cards; 1 more waiting",
+                 "  1    1 d     1  #", "  2    3 d     1  #", "2 reviews: 1 pass, 0 hard, 1 fail"):
+        assert text in out, text
+    assert len(out.split("Coming up")[1].split("Last 30")[0].strip().splitlines()) == 2
+    assert "e4" not in out and "a3" not in out  # no moves at all

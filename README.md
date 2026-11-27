@@ -87,6 +87,19 @@ already solved or revealed in a retry.
 In the app, **My mistakes…** (Ctrl+R or `:report`) shows the same report;
 click **Retry** next to an example to open that game straight into the puzzle.
 
+### Practice deck
+
+```bash
+.venv/bin/chesscoach-cli deck            # puzzles due today, cards per box, what's coming up
+```
+
+Your mistakes and blunders come back as puzzles on a schedule (Leitner boxes:
+1, 3, 7, 14, 30, 60 and 120 days). Ten new cards join the deck each day,
+blunders first; inaccuracies and positions you were already losing are left
+out. Finding a good move on your first try moves a card up a box, solving it
+after a wrong try or a hint keeps it where it is, and revealing the answer
+sends it back to tomorrow.
+
 ## Desktop app
 
 Add chessCoach to your Fedora app menu (this also sets up `.venv` if needed):
