@@ -16,9 +16,10 @@ Goal: find the mistakes that keep repeating across my games, then practice them 
 - [x] **4. Batch analysis + "my top mistakes" report**
   - Analyze my last N Chess.com games (UsagiTengu) in one go.
   - Show counts by tag, phase and time control, trend over time, and links to example positions.
-- [ ] **5. Practice deck (spaced repetition)**
-  - Turn my own mistake positions into puzzles that come back on a schedule (e.g. SM-2 / Leitner).
+- [x] **5. Practice deck (spaced repetition)**
+  - Turn my own mistake positions into puzzles that come back on a schedule (Leitner boxes: 1, 3, 7, 14, 30, 60, 120 days).
   - Same spoiler-free retry flow; failed puzzles come back sooner.
+  - Optional, not done yet: typed moves (`:Nf3`) in the Practice window; a setting for the 10 new cards a day.
 
 ## Visual polish
 
