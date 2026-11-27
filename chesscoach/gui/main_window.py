@@ -47,35 +47,14 @@ from .dialogs import ChessComDialog, HelpDialog, PastePGNDialog, SideDialog, sav
 from .evalgraph import EvalGraph
 from .interactive import InteractiveBoard
 from .keymap import Command, KeyParser, Mode, parse_command_line
+from .keys import key_token
+from .practice_window import PracticeWindow
 from .report_dialog import ReportDialog
 from .retry_panel import RetryPanel
 from .tasks import TaskThread
 from . import style
 
 SIDE_KEY = "player/last_side"
-
-_SPECIAL_KEYS = {
-    Qt.Key.Key_Escape: "Esc",
-    Qt.Key.Key_Return: "Enter",
-    Qt.Key.Key_Enter: "Enter",
-    Qt.Key.Key_Space: "Space",
-    Qt.Key.Key_Backspace: "Backspace",
-    Qt.Key.Key_Left: "Left",
-    Qt.Key.Key_Right: "Right",
-    Qt.Key.Key_Up: "Up",
-    Qt.Key.Key_Down: "Down",
-    Qt.Key.Key_Home: "Home",
-    Qt.Key.Key_End: "End",
-}
-
-
-def key_token(event) -> str | None:
-    """Turn a Qt key event into a keymap token (see keymap.py)."""
-    if event.key() in _SPECIAL_KEYS:
-        return _SPECIAL_KEYS[event.key()]
-    text = event.text()
-    return text if len(text) == 1 and text.isprintable() else None
-
 
 class CommandLine(QLineEdit):
     """Vim-style ':' line at the bottom of the window."""
@@ -148,6 +127,7 @@ class MainWindow(QMainWindow):
         # Opened from the report: (ply to retry, your color) once the analysis is done.
         self._pending_retry: tuple[int, chess.Color] | None = None
         self._report: ReportDialog | None = None
+        self._practice: PracticeWindow | None = None
 
         self._build_actions()
         self._build_layout()
@@ -178,6 +158,7 @@ class MainWindow(QMainWindow):
         action("Paste PGN…", self.paste_pgn, "Ctrl+Shift+V or :paste", QKeySequence("Ctrl+Shift+V"))
         action("Chess.com…", self.import_chesscom, "Ctrl+I or :cc", QKeySequence("Ctrl+I"))
         action("My mistakes…", self.show_report, "Ctrl+R or :report", QKeySequence("Ctrl+R"))
+        action("Practice…", self.show_practice, "Ctrl+P or :practice", QKeySequence("Ctrl+P"))
         toolbar.addSeparator()
         action("Flip board", self.flip_board, "f")
         self.retry_action = action("Try a better move", lambda: self.start_retry(), "t or Enter")
@@ -371,6 +352,16 @@ class MainWindow(QMainWindow):
         self._report.show()
         self._report.raise_()
         self._report.activateWindow()
+
+    def show_practice(self) -> None:
+        """Start a practice session with today's cards (or bring the running one forward)."""
+        if self._practice is None or not self._practice.isVisible():
+            self._practice = PracticeWindow(self.db, self)
+            self._practice.open_mistake.connect(self.open_mistake)
+            self._practice.show()
+            self._practice.start()
+        self._practice.raise_()
+        self._practice.activateWindow()
 
     def open_mistake(self, mistake_id: int) -> None:
         """Open a stored mistake's game and start its puzzle once the analysis is in."""
@@ -1049,6 +1040,7 @@ class MainWindow(QMainWindow):
                 "help": self.show_help,
                 "flip": self.flip_board,
                 "report": self.show_report,
+                "practice": self.show_practice,
             }[result.command]()
 
     def closeEvent(self, event) -> None:  # noqa: N802
