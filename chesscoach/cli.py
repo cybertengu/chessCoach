@@ -16,7 +16,7 @@ from .cache import AnalysisCache, analyze_with_cache
 from .chesscom import ChessComError, recent_games
 from .classify import judge_game, player_color, side_accuracy
 from .db import DatabaseError, MistakeDB, parse_time_control, refutation_line
-from .deck import INTERVALS, NEW_PER_DAY, Deck, DeckSummary, Grade
+from .deck import INTERVALS, NEW_PER_DAY, TROUBLE_LAPSES, TROUBLE_SHOWN, Deck, DeckReport, DeckSummary, Grade
 from .engine import EngineNotFoundError, open_engine
 from .pgn import PGNError, read_game_file
 from .report import Filters, Period, Report, ReportMistake, TimeClass, build_report
@@ -298,7 +298,39 @@ def _cmd_report(args: argparse.Namespace) -> int:
               file=sys.stderr)
         report = build_report(db, filters, period=Period(args.by), examples=args.examples)
     _print_report(report)
+    if report.games:
+        _print_deck_report(Deck(db).report(dt.date.today()))
     return 0
+
+
+def _print_deck_report(deck: DeckReport) -> None:
+    """The report's practice deck section. Names no best moves and no "missed" tags of a card."""
+    if deck.empty:
+        return
+    s = deck.summary
+    print()
+    print(f"Practice deck: {_plural(s.in_deck, 'card')}, {s.new_waiting} more waiting. "
+          f"Today: {s.due} due + {s.new_today} new (`chesscoach-cli deck` for more).")
+    total = sum(s.recent.values())
+    if total:
+        passed = s.recent.get(Grade.PASS, 0)
+        print(f"  Last 30 days: {_plural(total, 'review')}, {100 * passed / total:.0f}% "
+              "passed first try")
+    practiced = [p for p in deck.patterns if p.reviews]
+    if practiced:
+        print(f"  {'Practice by pattern':<24}{'Cards':>6}{'Reviews':>9}{'First try':>11}")
+        for p in practiced:
+            print(f"    {p.tag.label:<22}{p.cards:>6}{p.reviews:>9}{p.pass_rate:>10.0f}%")
+    if deck.trouble:
+        print(f"  Trouble cards (missed {TROUBLE_LAPSES}+ times):")
+        for card in deck.trouble[:TROUBLE_SHOWN]:
+            m = card.mistake
+            label = f"{m.move_number}{'.' if card.color else '...'} {m.san}"
+            tags = ", ".join(t.label for t in card.tags if not t.spoiler)
+            print(f"    {card.game_date or '?'}  vs {card.opponent}  {label}  "
+                  f"missed {card.lapses}x" + (f"  [{tags}]" if tags else ""))
+        if len(deck.trouble) > TROUBLE_SHOWN:
+            print(f"    ... and {len(deck.trouble) - TROUBLE_SHOWN} more")
 
 
 def _cmd_deck(args: argparse.Namespace) -> int:

@@ -140,3 +140,28 @@ def test_stale_tags_are_counted():
 def test_empty_database():
     report = build_report(MistakeDB())
     assert report.games == 0 and report.per_game == 0 and report.trend == []
+
+
+def test_report_html_has_the_deck_section_without_spoilers():
+    import datetime as dt
+
+    pytest.importorskip("PySide6")
+    from test_deck import FENS, _failed, _game, _mistake
+
+    from chesscoach.db import MistakeDB
+    from chesscoach.deck import Deck
+    from chesscoach.gui.report_dialog import deck_html
+
+    db = MistakeDB()
+    assert deck_html(Deck(db).report(dt.date.today())) == ""
+    with db.connect() as conn:
+        g = _game(conn, "2026-11-01")
+        fork = _mistake(conn, g, 3, fen=FENS[1], tags=["missed_fork", "hung_piece"])
+    for day in range(3):
+        Deck(db).record(fork, _failed(), dt.date.today() - dt.timedelta(days=day + 1))
+    html = deck_html(Deck(db).report(dt.date.today()))
+    for text in ("Practice deck", "1 day", "120 days", "Practice by pattern", "Trouble cards",
+                 f"mistake:{fork}", "missed 3×", "Practice them with Ctrl+P"):
+        assert text in html, text
+    trouble = html.split("Trouble cards")[1]
+    assert "Missed fork" not in trouble and "e4" not in html

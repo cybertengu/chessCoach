@@ -107,6 +107,11 @@ more at the end of the session (not graded). "Missed" tags stay hidden until
 you solve or reveal the card in that review, and **Open the game** shows the
 whole game afterwards.
 
+The report (`chesscoach-cli report` and **My mistakes…**) ends with the deck:
+cards per box, how often you found a good move on the first try (overall
+and per pattern, to see whether e.g. "hung a piece" improves), and the
+trouble cards you've missed three times or more.
+
 ## Desktop app
 
 Add chessCoach to your Fedora app menu (this also sets up `.venv` if needed):
